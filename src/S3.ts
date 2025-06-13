@@ -49,10 +49,8 @@ class s3mini {
   private requestSizeInBytes: number;
   private requestAbortTimeout?: number;
   private logger?: IT.Logger;
-  private fullDatetime: string;
-  private shortDatetime: string;
-  private signingKey: Buffer;
-  private credentialScope: string;
+  private signingKeyDate?: string;
+  private signingKey?: Buffer;
 
   constructor({
     accessKeyId,
@@ -71,10 +69,6 @@ class s3mini {
     this.requestSizeInBytes = requestSizeInBytes;
     this.requestAbortTimeout = requestAbortTimeout;
     this.logger = logger;
-    this.fullDatetime = new Date().toISOString().replace(/[:-]|\.\d{3}/g, '');
-    this.shortDatetime = this.fullDatetime.slice(0, 8);
-    this.signingKey = this._getSignatureKey(this.shortDatetime);
-    this.credentialScope = [this.shortDatetime, this.region, C.S3_SERVICE, C.AWS_REQUEST_TYPE].join('/');
   }
 
   private _sanitize(obj: unknown): unknown {
@@ -254,8 +248,12 @@ class s3mini {
         url.pathname === '/' ? `/${keyPath.replace(/^\/+/, '')}` : `${url.pathname}/${keyPath.replace(/^\/+/, '')}`;
     }
 
+    const fullDatetime = new Date().toISOString().replace(/[:-]|\.\d{3}/g, '');
+    const shortDatetime = fullDatetime.slice(0, 8);
+    const credentialScope = this._buildCredentialScope(shortDatetime);
+
     headers[C.HEADER_AMZ_CONTENT_SHA256] = C.UNSIGNED_PAYLOAD; // body ? U.hash(body) : C.UNSIGNED_PAYLOAD;
-    headers[C.HEADER_AMZ_DATE] = this.fullDatetime;
+    headers[C.HEADER_AMZ_DATE] = fullDatetime;
     headers[C.HEADER_HOST] = url.host;
     const canonicalHeaders = this._buildCanonicalHeaders(headers);
     const signedHeaders = Object.keys(headers)
@@ -264,9 +262,9 @@ class s3mini {
       .join(';');
 
     const canonicalRequest = this._buildCanonicalRequest(method, url, query, canonicalHeaders, signedHeaders);
-    const stringToSign = this._buildStringToSign(canonicalRequest);
-    const signature = this._calculateSignature(stringToSign);
-    const authorizationHeader = this._buildAuthorizationHeader(signedHeaders, signature);
+    const stringToSign = this._buildStringToSign(fullDatetime, credentialScope, canonicalRequest);
+    const signature = this._calculateSignature(shortDatetime, stringToSign);
+    const authorizationHeader = this._buildAuthorizationHeader(credentialScope, signedHeaders, signature);
     headers[C.HEADER_AUTHORIZATION] = authorizationHeader;
     return { url: url.toString(), headers };
   }
@@ -295,17 +293,25 @@ class s3mini {
     ].join('\n');
   }
 
-  private _buildStringToSign(canonicalRequest: string): string {
-    return [C.AWS_ALGORITHM, this.fullDatetime, this.credentialScope, U.hash(canonicalRequest)].join('\n');
+  private _buildCredentialScope(shortDatetime: string): string {
+    return [shortDatetime, this.region, C.S3_SERVICE, C.AWS_REQUEST_TYPE].join('/');
   }
 
-  private _calculateSignature(stringToSign: string): string {
-    return U.hmac(this.signingKey, stringToSign, 'hex') as string;
+  private _buildStringToSign(fullDatetime: string, credentialScope: string, canonicalRequest: string): string {
+    return [C.AWS_ALGORITHM, fullDatetime, credentialScope, U.hash(canonicalRequest)].join('\n');
   }
 
-  private _buildAuthorizationHeader(signedHeaders: string, signature: string): string {
+  private _calculateSignature(shortDatetime: string, stringToSign: string): string {
+    if (shortDatetime !== this.signingKeyDate) {
+      this.signingKeyDate = shortDatetime;
+      this.signingKey = this._getSignatureKey(shortDatetime);
+    }
+    return U.hmac(this.signingKey!, stringToSign, 'hex') as string;
+  }
+
+  private _buildAuthorizationHeader(credentialScope: string, signedHeaders: string, signature: string): string {
     return [
-      `${C.AWS_ALGORITHM} Credential=${this.accessKeyId}/${this.credentialScope}`,
+      `${C.AWS_ALGORITHM} Credential=${this.accessKeyId}/${credentialScope}`,
       `SignedHeaders=${signedHeaders}`,
       `Signature=${signature}`,
     ].join(', ');
