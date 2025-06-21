@@ -374,6 +374,13 @@ class s3mini {
     return this._sendRequest(finalUrl, method, signedHeadersString, body, tolerated);
   }
 
+  /**
+   * Gets the current configuration properties of the S3 instance.
+   * @returns {IT.S3Config} The current S3 configuration object containing all settings.
+   * @example
+   * const config = s3.getProps();
+   * console.log(config.endpoint); // 'https://s3.amazonaws.com/my-bucket'
+   */
   public getProps(): IT.S3Config {
     return {
       accessKeyId: this.accessKeyId,
@@ -385,6 +392,26 @@ class s3mini {
       logger: this.logger,
     };
   }
+
+  /**
+   * Updates the configuration properties of the S3 instance.
+   * @param {IT.S3Config} props - The new configuration object.
+   * @param {string} props.accessKeyId - The access key ID for authentication.
+   * @param {string} props.secretAccessKey - The secret access key for authentication.
+   * @param {string} props.endpoint - The endpoint URL of the S3-compatible service.
+   * @param {string} [props.region='auto'] - The region of the S3 service.
+   * @param {number} [props.requestSizeInBytes=8388608] - The request size of a single request in bytes.
+   * @param {number} [props.requestAbortTimeout] - The timeout in milliseconds after which a request should be aborted.
+   * @param {IT.Logger} [props.logger] - A logger object with methods like info, warn, error.
+   * @throws {TypeError} Will throw an error if required parameters are missing or of incorrect type.
+   * @example
+   * s3.setProps({
+   *   accessKeyId: 'new-access-key',
+   *   secretAccessKey: 'new-secret-key',
+   *   endpoint: 'https://new-endpoint.com/my-bucket',
+   *   region: 'us-west-2' // by default is auto
+   * });
+   */
   public setProps(props: IT.S3Config): void {
     this._validateConstructorParams(props.accessKeyId, props.secretAccessKey, props.endpoint);
     this.accessKeyId = props.accessKeyId;
@@ -396,6 +423,14 @@ class s3mini {
     this.logger = props.logger;
   }
 
+  /**
+   * Sanitizes an ETag value by removing surrounding quotes and whitespace.
+   * Still returns RFC compliant ETag. https://www.rfc-editor.org/rfc/rfc9110#section-8.8.3
+   * @param {string} etag - The ETag value to sanitize.
+   * @returns {string} The sanitized ETag value.
+   * @example
+   * const cleanEtag = s3.sanitizeETag('"abc123"'); // Returns: 'abc123'
+   */
   public sanitizeETag(etag: string): string {
     return U.sanitizeETag(etag);
   }
@@ -434,13 +469,19 @@ class s3mini {
   }
 
   /**
-   * Lists objects in the bucket.
-   * This method sends a request to list objects in the specified bucket. Opposite of `listObjectsV2` it is not paginated!
+   * Lists objects in the bucket with optional filtering and no pagination.
+   * This method retrieves all objects matching the criteria (not paginated like listObjectsV2).
    * @param {string} [delimiter='/'] - The delimiter to use for grouping objects.
    * @param {string} [prefix=''] - The prefix to filter objects by.
    * @param {number} [maxKeys] - The maximum number of keys to return. If not provided, all keys will be returned.
    * @param {Record<string, unknown>} [opts={}] - Additional options for the request.
-   * @returns A promise that resolves to an array of objects or null if the bucket is empty.
+   * @returns {Promise<object[] | null>} A promise that resolves to an array of objects or null if the bucket is empty.
+   * @example
+   * // List all objects
+   * const objects = await s3.listObjects();
+   *
+   * // List objects with prefix
+   * const photos = await s3.listObjects('/', 'photos/', 100);
    */
   public async listObjects(
     delimiter: string = '/',
@@ -698,6 +739,13 @@ class s3mini {
     }
   }
 
+  /**
+   * Checks if an object exists in the S3-compatible service.
+   * This method sends a HEAD request to check if the specified object exists.
+   * @param {string} key - The key of the object to check.
+   * @param {Record<string, unknown>} [opts={}] - Additional options for the request.
+   * @returns A promise that resolves to true if the object exists, false if not found, or null if ETag mismatch.
+   */
   public async objectExists(key: string, opts: Record<string, unknown> = {}): Promise<IT.ExistResponseCode> {
     const res = await this._signedRequest('HEAD', key, {
       query: opts,
@@ -713,6 +761,18 @@ class s3mini {
     return true; // found (200)
   }
 
+  /**
+   * Retrieves the ETag of an object without downloading its content.
+   * @param {string} key - The key of the object to retrieve the ETag for.
+   * @param {Record<string, unknown>} [opts={}] - Additional options for the request.
+   * @returns {Promise<string | null>} A promise that resolves to the ETag value or null if the object is not found.
+   * @throws {Error} If the ETag header is not found in the response.
+   * @example
+   * const etag = await s3.getEtag('path/to/file.txt');
+   * if (etag) {
+   *   console.log(`File ETag: ${etag}`);
+   * }
+   */
   public async getEtag(key: string, opts: Record<string, unknown> = {}): Promise<string | null> {
     const res = await this._signedRequest('HEAD', key, {
       query: opts,
@@ -731,6 +791,21 @@ class s3mini {
     return U.sanitizeETag(etag);
   }
 
+  /**
+   * Uploads an object to the S3-compatible service.
+   * @param {string} key - The key/path where the object will be stored.
+   * @param {string | Buffer} data - The data to upload (string or Buffer).
+   * @param {string} [fileType='application/octet-stream'] - The MIME type of the file.
+   * @returns {Promise<Response>} A promise that resolves to the Response object from the upload request.
+   * @throws {TypeError} If data is not a string or Buffer.
+   * @example
+   * // Upload text file
+   * await s3.putObject('hello.txt', 'Hello, World!', 'text/plain');
+   *
+   * // Upload binary data
+   * const buffer = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+   * await s3.putObject('image.png', buffer, 'image/png');
+   */
   public async putObject(
     key: string,
     data: string | Buffer,
@@ -749,6 +824,17 @@ class s3mini {
     });
   }
 
+  /**
+   * Initiates a multipart upload and returns the upload ID.
+   * @param {string} key - The key/path where the object will be stored.
+   * @param {string} [fileType='application/octet-stream'] - The MIME type of the file.
+   * @returns {Promise<string>} A promise that resolves to the upload ID for the multipart upload.
+   * @throws {TypeError} If key is invalid or fileType is not a string.
+   * @throws {Error} If the multipart upload fails to initialize.
+   * @example
+   * const uploadId = await s3.getMultipartUploadId('large-file.zip', 'application/zip');
+   * console.log(`Started multipart upload: ${uploadId}`);
+   */
   public async getMultipartUploadId(key: string, fileType: string = C.DEFAULT_STREAM_CONTENT_TYPE): Promise<string> {
     this._checkKey(key);
     if (typeof fileType !== 'string') {
@@ -778,6 +864,24 @@ class s3mini {
     throw new Error(`${C.ERROR_PREFIX}Failed to create multipart upload: ${JSON.stringify(parsed)}`);
   }
 
+  /**
+   * Uploads a part in a multipart upload.
+   * @param {string} key - The key of the object being uploaded.
+   * @param {string} uploadId - The upload ID from getMultipartUploadId.
+   * @param {Buffer | string} data - The data for this part.
+   * @param {number} partNumber - The part number (must be between 1 and 10,000).
+   * @param {Record<string, unknown>} [opts={}] - Additional options for the request.
+   * @returns {Promise<IT.UploadPart>} A promise that resolves to an object containing the partNumber and etag.
+   * @throws {TypeError} If any parameter is invalid.
+   * @example
+   * const part = await s3.uploadPart(
+   *   'large-file.zip',
+   *   uploadId,
+   *   partData,
+   *   1
+   * );
+   * console.log(`Part ${part.partNumber} uploaded with ETag: ${part.etag}`);
+   */
   public async uploadPart(
     key: string,
     uploadId: string,
@@ -797,13 +901,29 @@ class s3mini {
     return { partNumber, etag: U.sanitizeETag(res.headers.get('etag') || '') };
   }
 
+  /**
+   * Completes a multipart upload by combining all uploaded parts.
+   * @param {string} key - The key of the object being uploaded.
+   * @param {string} uploadId - The upload ID from getMultipartUploadId.
+   * @param {Array<IT.UploadPart>} parts - Array of uploaded parts with partNumber and etag.
+   * @returns {Promise<IT.CompleteMultipartUploadResult>} A promise that resolves to the completion result containing the final ETag.
+   * @throws {Error} If the multipart upload fails to complete.
+   * @example
+   * const result = await s3.completeMultipartUpload(
+   *   'large-file.zip',
+   *   uploadId,
+   *   [
+   *     { partNumber: 1, etag: 'abc123' },
+   *     { partNumber: 2, etag: 'def456' }
+   *   ]
+   * );
+   * console.log(`Upload completed with ETag: ${result.etag}`);
+   */
   public async completeMultipartUpload(
     key: string,
     uploadId: string,
     parts: Array<IT.UploadPart>,
   ): Promise<IT.CompleteMultipartUploadResult> {
-    // …existing validation left untouched …
-
     const query = { uploadId };
     const xmlBody = this._buildCompleteMultipartUploadXml(parts);
     const headers = {
@@ -836,6 +956,21 @@ class s3mini {
     return result as IT.CompleteMultipartUploadResult;
   }
 
+  /**
+   * Aborts a multipart upload and removes all uploaded parts.
+   * @param {string} key - The key of the object being uploaded.
+   * @param {string} uploadId - The upload ID to abort.
+   * @returns {Promise<object>} A promise that resolves to an object containing the abort status and details.
+   * @throws {TypeError} If key or uploadId is invalid.
+   * @throws {Error} If the abort operation fails.
+   * @example
+   * try {
+   *   const result = await s3.abortMultipartUpload('large-file.zip', uploadId);
+   *   console.log('Upload aborted:', result.status);
+   * } catch (error) {
+   *   console.error('Failed to abort upload:', error);
+   * }
+   */
   public async abortMultipartUpload(key: string, uploadId: string): Promise<object> {
     this._checkKey(key);
     if (!uploadId) {
