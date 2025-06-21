@@ -156,7 +156,7 @@ class s3mini {
   private _validateMethodIsGetOrHead(method: string): void {
     if (method !== 'GET' && method !== 'HEAD') {
       this._log('error', `${C.ERROR_PREFIX}method must be either GET or HEAD`);
-      throw new Error('method must be either GET or HEAD');
+      throw new Error(`${C.ERROR_PREFIX}method must be either GET or HEAD`);
     }
   }
 
@@ -400,7 +400,11 @@ class s3mini {
     return U.sanitizeETag(etag);
   }
 
-  // TBD
+  /**
+   * Creates a new bucket.
+   * This method sends a request to create a new bucket in the specified in endpoint.
+   * @returns A promise that resolves to true if the bucket was created successfully, false otherwise.
+   */
   public async createBucket(): Promise<boolean> {
     const xmlBody = `
       <CreateBucketConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
@@ -419,11 +423,25 @@ class s3mini {
     return res.status === 200;
   }
 
+  /**
+   * Checks if a bucket exists.
+   * This method sends a request to check if the specified bucket exists in the S3-compatible service.
+   * @returns A promise that resolves to true if the bucket exists, false otherwise.
+   */
   public async bucketExists(): Promise<boolean> {
     const res = await this._signedRequest('HEAD', '', { tolerated: [200, 404, 403] });
     return res.status === 200;
   }
 
+  /**
+   * Lists objects in the bucket.
+   * This method sends a request to list objects in the specified bucket. Opposite of `listObjectsV2` it is not paginated!
+   * @param {string} [delimiter='/'] - The delimiter to use for grouping objects.
+   * @param {string} [prefix=''] - The prefix to filter objects by.
+   * @param {number} [maxKeys] - The maximum number of keys to return. If not provided, all keys will be returned.
+   * @param {Record<string, unknown>} [opts={}] - Additional options for the request.
+   * @returns A promise that resolves to an array of objects or null if the bucket is empty.
+   */
   public async listObjects(
     delimiter: string = '/',
     prefix: string = '',
@@ -501,6 +519,15 @@ class s3mini {
     return all;
   }
 
+  /**
+   * Lists multipart uploads in the bucket.
+   * This method sends a request to list multipart uploads in the specified bucket.
+   * @param {string} [delimiter='/'] - The delimiter to use for grouping uploads.
+   * @param {string} [prefix=''] - The prefix to filter uploads by.
+   * @param {IT.HttpMethod} [method='GET'] - The HTTP method to use for the request (GET or HEAD).
+   * @param {Record<string, string | number | boolean | undefined>} [opts={}] - Additional options for the request.
+   * @returns A promise that resolves to a list of multipart uploads or an error.
+   */
   public async listMultipartUploads(
     delimiter: string = '/',
     prefix: string = '',
@@ -538,6 +565,13 @@ class s3mini {
     return raw as IT.MultipartUploadError;
   }
 
+  /**
+   * Get an object from the S3-compatible service.
+   * This method sends a request to retrieve the specified object from the S3-compatible service.
+   * @param {string} key - The key of the object to retrieve.
+   * @param {Record<string, unknown>} [opts={}] - Additional options for the request.
+   * @returns A promise that resolves to the object data (string) or null if not found.
+   */
   public async getObject(key: string, opts: Record<string, unknown> = {}): Promise<string | null> {
     const res = await this._signedRequest('GET', key, { query: opts, tolerated: [200, 404, 412, 304] });
     if ([404, 412, 304].includes(res.status)) {
@@ -546,6 +580,13 @@ class s3mini {
     return res.text();
   }
 
+  /**
+   * Get an object response from the S3-compatible service.
+   * This method sends a request to retrieve the specified object and returns the full response.
+   * @param {string} key - The key of the object to retrieve.
+   * @param {Record<string, unknown>} [opts={}] - Additional options for the request.
+   * @returns A promise that resolves to the Response object or null if not found.
+   */
   public async getObjectResponse(key: string, opts: Record<string, unknown> = {}): Promise<Response | null> {
     const res = await this._signedRequest('GET', key, { query: opts, tolerated: [200, 404, 412, 304] });
     if ([404, 412, 304].includes(res.status)) {
@@ -554,6 +595,13 @@ class s3mini {
     return res;
   }
 
+  /**
+   * Get an object as an ArrayBuffer from the S3-compatible service.
+   * This method sends a request to retrieve the specified object and returns it as an ArrayBuffer.
+   * @param {string} key - The key of the object to retrieve.
+   * @param {Record<string, unknown>} [opts={}] - Additional options for the request.
+   * @returns A promise that resolves to the object data as an ArrayBuffer or null if not found.
+   */
   public async getObjectArrayBuffer(key: string, opts: Record<string, unknown> = {}): Promise<ArrayBuffer | null> {
     const res = await this._signedRequest('GET', key, { query: opts, tolerated: [200, 404, 412, 304] });
     if ([404, 412, 304].includes(res.status)) {
@@ -562,6 +610,13 @@ class s3mini {
     return res.arrayBuffer();
   }
 
+  /**
+   * Get an object as JSON from the S3-compatible service.
+   * This method sends a request to retrieve the specified object and returns it as JSON.
+   * @param {string} key - The key of the object to retrieve.
+   * @param {Record<string, unknown>} [opts={}] - Additional options for the request.
+   * @returns A promise that resolves to the object data as JSON or null if not found.
+   */
   public async getObjectJSON<T = unknown>(key: string, opts: Record<string, unknown> = {}): Promise<T | null> {
     const res = await this._signedRequest('GET', key, { query: opts, tolerated: [200, 404, 412, 304] });
     if ([404, 412, 304].includes(res.status)) {
@@ -570,6 +625,13 @@ class s3mini {
     return res.json() as Promise<T>;
   }
 
+  /**
+   * Get an object with its ETag from the S3-compatible service.
+   * This method sends a request to retrieve the specified object and its ETag.
+   * @param {string} key - The key of the object to retrieve.
+   * @param {Record<string, unknown>} [opts={}] - Additional options for the request.
+   * @returns A promise that resolves to an object containing the ETag and the object data as an ArrayBuffer or null if not found.
+   */
   public async getObjectWithETag(
     key: string,
     opts: Record<string, unknown> = {},
@@ -583,7 +645,7 @@ class s3mini {
 
       const etag = res.headers.get(C.HEADER_ETAG);
       if (!etag) {
-        throw new Error('ETag not found in response headers');
+        throw new Error(`${C.ERROR_PREFIX}ETag not found in response headers`);
       }
       return { etag: U.sanitizeETag(etag), data: await res.arrayBuffer() };
     } catch (err) {
@@ -592,6 +654,16 @@ class s3mini {
     }
   }
 
+  /**
+   * Get an object as a raw response from the S3-compatible service.
+   * This method sends a request to retrieve the specified object and returns the raw response.
+   * @param {string} key - The key of the object to retrieve.
+   * @param {boolean} [wholeFile=true] - Whether to retrieve the whole file or a range.
+   * @param {number} [rangeFrom=0] - The starting byte for the range (if not whole file).
+   * @param {number} [rangeTo=this.requestSizeInBytes] - The ending byte for the range (if not whole file).
+   * @param {Record<string, unknown>} [opts={}] - Additional options for the request.
+   * @returns A promise that resolves to the Response object.
+   */
   public async getObjectRaw(
     key: string,
     wholeFile = true,
@@ -608,10 +680,22 @@ class s3mini {
     });
   }
 
+  /**
+   * Get the content length of an object.
+   * This method sends a HEAD request to retrieve the content length of the specified object.
+   * @param {string} key - The key of the object to retrieve the content length for.
+   * @returns A promise that resolves to the content length of the object in bytes, or 0 if not found.
+   * @throws {Error} If the content length header is not found in the response.
+   */
   public async getContentLength(key: string): Promise<number> {
-    const res = await this._signedRequest('HEAD', key);
-    const len = res.headers.get(C.HEADER_CONTENT_LENGTH);
-    return len ? +len : 0;
+    try {
+      const res = await this._signedRequest('HEAD', key);
+      const len = res.headers.get(C.HEADER_CONTENT_LENGTH);
+      return len ? +len : 0;
+    } catch (err) {
+      this._log('error', `Error getting content length for object ${key}: ${String(err)}`);
+      throw new Error(`${C.ERROR_PREFIX}Error getting content length for object ${key}: ${String(err)}`);
+    }
   }
 
   public async objectExists(key: string, opts: Record<string, unknown> = {}): Promise<IT.ExistResponseCode> {
@@ -641,7 +725,7 @@ class s3mini {
 
     const etag = res.headers.get(C.HEADER_ETAG);
     if (!etag) {
-      throw new Error('ETag not found in response headers');
+      throw new Error(`${C.ERROR_PREFIX}ETag not found in response headers`);
     }
 
     return U.sanitizeETag(etag);
@@ -798,9 +882,88 @@ class s3mini {
     `;
   }
 
+  /**
+   * Deletes an object from the bucket.
+   * This method sends a request to delete the specified object from the bucket.
+   * @param {string} key - The key of the object to delete.
+   * @returns A promise that resolves to true if the object was deleted successfully, false otherwise.
+   */
   public async deleteObject(key: string): Promise<boolean> {
     const res = await this._signedRequest('DELETE', key, { tolerated: [200, 204] });
     return res.status === 200 || res.status === 204;
+  }
+
+  private _buildDeleteObjectsXml(keys: string[]): string {
+    return `
+      <Delete xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+        ${keys
+          .map(
+            key => `
+          <Object>
+            <Key>${U.escapeXml(key)}</Key>
+          </Object>
+        `,
+          )
+          .join('')}
+      </Delete>
+    `;
+  }
+
+  /**
+   * Deletes multiple objects from the bucket.
+   * @param {string[]} keys - An array of object keys to delete.
+   * @returns A promise that resolves to an array of booleans indicating success for each key in order.
+   */
+  public async deleteObjects(keys: string[]): Promise<boolean[]> {
+    if (!Array.isArray(keys) || keys.length === 0) {
+      return [];
+    }
+    const xmlBody = this._buildDeleteObjectsXml(keys);
+    const query = { delete: '' };
+    const headers = {
+      [C.HEADER_CONTENT_TYPE]: C.XML_CONTENT_TYPE,
+      [C.HEADER_CONTENT_LENGTH]: Buffer.byteLength(xmlBody).toString(),
+    };
+    const res = await this._signedRequest('POST', '', {
+      query,
+      body: xmlBody,
+      headers,
+      withQuery: true,
+    });
+    const parsed = U.parseXml(await res.text()) as unknown;
+    if (!parsed || typeof parsed !== 'object') {
+      throw new Error(`${C.ERROR_PREFIX}Failed to delete objects: ${JSON.stringify(parsed)}`);
+    }
+    // Create a map to track results for each key
+    const resultMap = new Map<string, boolean>();
+
+    // Initialize all keys as false (not deleted)
+    keys.forEach(key => resultMap.set(key, false));
+    if ('deleted' in parsed) {
+      const deleted = Array.isArray(parsed.deleted) ? parsed.deleted : [parsed.deleted];
+      deleted.forEach((item: { key: string }) => {
+        if (item && typeof item === 'object' && 'key' in item) {
+          // Note: S3 returns keys in their original form (not URL-encoded)
+          resultMap.set(item.key, true);
+        }
+      });
+    }
+    if ('error' in parsed) {
+      const errors = Array.isArray(parsed.error) ? parsed.error : [parsed.error];
+      errors.forEach((item: { key: string; code: string; message: string }) => {
+        if (item && typeof item === 'object' && 'key' in item) {
+          resultMap.set(item.key, false);
+          // Optionally log the error for debugging
+          this._log('warn', `Failed to delete object: ${item.key}`, {
+            code: item.code,
+            message: item.message,
+          });
+        }
+      });
+    }
+
+    // Return boolean array in the same order as input keys
+    return keys.map(key => resultMap.get(key) || false);
   }
 
   private async _sendRequest(

@@ -53,6 +53,20 @@ const entityMap = {
   '&amp;': '&',
 } as const;
 
+/**
+ * Escape special characters for XML
+ * @param value String to escape
+ * @returns XML-escaped string
+ */
+export const escapeXml = (value: string): string => {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+};
+
 const unescapeXml = (value: string): string =>
   value.replace(/&(quot|apos|lt|gt|amp);/g, m => entityMap[m as keyof typeof entityMap] ?? m);
 

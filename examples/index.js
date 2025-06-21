@@ -35,12 +35,11 @@ console.log('Configured providers:', providers);
     if (bucketExists) {
       const fileContent = 'Hello, World!';
       const key = 'example.txt';
-      const response = await s3client.put(key, fileContent);
+      const response = await s3client.putObject(key, fileContent);
       console.log(`File uploaded successfully: ${response.status === 200}`);
 
       if (response.status === 200) {
-        const file = await s3client.get(key);
-        const respText = await file.text();
+        const respText = await s3client.getObject(key);
         console.log(`File content: ${respText}`);
         if (respText !== fileContent) {
           console.error('File content does not match expected content.');
@@ -48,6 +47,26 @@ console.log('Configured providers:', providers);
           console.log('File content matches expected content.');
         }
       }
+
+      for (let i = 0; i < 5; i++) {
+        const key = `example-${i}.txt`;
+        const response = await s3client.putObject(key, `Hello, World! ${i}`);
+        console.log(`File ${key} uploaded successfully: ${response.status === 200}`);
+      }
+      const listResponse = await s3client.listObjects();
+      const keyArray = [];
+      console.log('Files in bucket:');
+      listResponse.forEach(file => {
+        console.log(`- ${file.key}`);
+        keyArray.push(file.key);
+      });
+      const deleteResponse = await s3client.deleteObjects(keyArray);
+      console.log(`Files deleted: ${deleteResponse}`);
+      const listAfterDelete = await s3client.listObjects();
+      console.log('Files after deletion:');
+      listAfterDelete.forEach(file => {
+        console.log(`- ${file.key}`);
+      });
     }
   } catch (error) {
     console.error('Error checking bucket existence:', error);
