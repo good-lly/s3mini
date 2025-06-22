@@ -1,7 +1,7 @@
 services:
   garage:
     container_name: garage
-    image: docker.io/dxflrs/garage:v1.1.0
+    image: docker.io/dxflrs/garage:v2.0.0
     volumes:
       # config
       - ./garage/garage.toml:/etc/garage.toml:ro
