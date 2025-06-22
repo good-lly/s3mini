@@ -60,6 +60,7 @@ The library supports a subset of S3 operations, focusing on essential features, 
 - ✅ GetObject (getObject, getObjectResponse, getObjectWithETag, getObjectRaw, getObjectArrayBuffer, getObjectJSON)
 - ✅ PutObject (putObject)
 - ✅ DeleteObject (deleteObject)
+- ✅ DeleteObjects (deleteObjects)
 - ✅ HeadObject (objectExists, getEtag, getContentLength)
 - ✅ listMultipartUploads
 - ✅ CreateMultipartUpload (getMultipartUploadId)
@@ -175,6 +176,10 @@ if (list) {
 
 // delete the object
 const wasDeleted: boolean = await s3client.deleteObject(smallObjectKey);
+// to delete multiple objects, use deleteObjects method
+// const keysToDelete: string[] = ['object1.txt', 'object2.txt'];
+// const deletedArray: boolean[] = await s3client.deleteObjects(keysToDelete);
+// Note: deleteObjects returns an array of booleans, one for each key, indicating if the object was deleted or not
 
 // Multipart upload
 const multipartKey = 'multipart-object.txt';
