@@ -71,15 +71,8 @@ export const testRunner = bucket => {
       expect(list).toBeInstanceOf(Array);
       if (list.length > 0) {
         expect(list.length).toBeGreaterThan(0);
-        const generator = function* (n) {
-          for (let i = 0; i < n; i++) yield () => s3client.deleteObject(list[i].key);
-        };
-        await runInBatches(generator(list.length), OP_CAP, 1_000);
-        // doublecheck that the bucket is empty
-        const list2 = await s3client.listObjects();
-        expect(list2).toBeInstanceOf(Array);
-        expect(list2.length).toBe(0);
-        // console.log('Bucket is empty');
+
+        await s3client.deleteObjects(list.map(obj => obj.Key));
       }
     }
   });
@@ -112,7 +105,7 @@ export const testRunner = bucket => {
     expect(objects).toBeInstanceOf(Array);
     if (objects.length > 0) {
       for (const obj of objects) {
-        await s3client.deleteObject(obj.key);
+        await s3client.deleteObject(obj.Key);
       }
     }
     // Check if the bucket is empty
@@ -148,8 +141,8 @@ export const testRunner = bucket => {
     const objects = await s3client.listObjects();
     expect(objects).toBeInstanceOf(Array);
     expect(objects.length).toBe(1);
-    expect(objects[0].key).toBe(specialCharKey);
-    expect(parseInt(objects[0].size)).toBe(byteSize(specialCharContentString));
+    expect(objects[0].Key).toBe(specialCharKey);
+    expect(parseInt(objects[0].Size)).toBe(byteSize(specialCharContentString));
 
     // update the object with a buffer with extra content
     // This is to test if the object can be updated with a buffer that has extra content
@@ -227,15 +220,15 @@ export const testRunner = bucket => {
       multipartUpload = await s3client.listMultipartUploads();
       expect(multipartUpload).toBeDefined();
       expect(typeof multipartUpload).toBe('object');
-      if (!multipartUpload.uploadId || !multipartUpload.key) {
+      if (!multipartUpload.uploadId || !multipartUpload.Key) {
         break;
       }
-      const abortUploadResponse = await s3client.abortMultipartUpload(multipartUpload.key, multipartUpload.uploadId);
+      const abortUploadResponse = await s3client.abortMultipartUpload(multipartUpload.Key, multipartUpload.uploadId);
       expect(abortUploadResponse).toBeDefined();
       expect(abortUploadResponse.status).toBe('Aborted');
-      expect(abortUploadResponse.key).toEqual(multipartUpload.key);
+      expect(abortUploadResponse.Key).toEqual(multipartUpload.Key);
       expect(abortUploadResponse.uploadId).toEqual(multipartUpload.uploadId);
-    } while (multipartUpload.uploadId && multipartUpload.key);
+    } while (multipartUpload.uploadId && multipartUpload.Key);
 
     const multipartUpload2 = await s3client.listMultipartUploads();
     expect(multipartUpload2).toBeDefined();
@@ -266,7 +259,6 @@ export const testRunner = bucket => {
     const completeResponse = await s3client.completeMultipartUpload(multipartKey, uploadId, parts);
     expect(completeResponse).toBeDefined();
     expect(typeof completeResponse).toBe('object');
-
     const etag = completeResponse.etag;
     expect(etag).toBeDefined();
     expect(typeof etag).toBe('string');
@@ -332,10 +324,11 @@ export const testRunner = bucket => {
     const objsLimited = await s3client.listObjects('/', prefix, 2);
     expect(objsLimited).toBeInstanceOf(Array);
     expect(objsLimited).toHaveLength(2);
-    expect(objsLimited[0].key).toBe(`${prefix}object1.txt`);
-    expect(objsLimited[1].key).toBe(`${prefix}object2.txt`);
+    expect(objsLimited[0].Key).toBe(`${prefix}object1.txt`);
+    expect(objsLimited[1].Key).toBe(`${prefix}object2.txt`);
 
-    await Promise.all(objsUnlimited.map(o => s3client.deleteObject(o.key)));
+    // await Promise.all(objsUnlimited.map(o => s3client.deleteObject(o.key)));
+    await s3client.deleteObjects(objsUnlimited.map(o => o.Key));
     expect(await s3client.listObjects('/', prefix)).toEqual([]);
   });
 
@@ -373,21 +366,22 @@ export const testRunner = bucket => {
     const first900Hundred = await s3client.listObjects('/', prefix, pageLarge);
     expect(first900Hundred).toBeInstanceOf(Array);
     expect(first900Hundred).toHaveLength(pageLarge); // ✔ array length = 900:contentReference[oaicite:2]{index=2}
-    expect(first900Hundred[0].key).toBe(`${prefix}object0.txt`); // ✔ first object key
+    expect(first900Hundred[0].Key).toBe(`${prefix}object0.txt`); // ✔ first object key
 
     // 3️⃣  Unlimited (implicit pagination inside helper)
     const everything = await s3client.listObjects('/', prefix); // maxKeys = undefined ⇒ list all
     expect(everything).toBeInstanceOf(Array);
     expect(everything).toHaveLength(counter);
 
-    // cleanup
-    const generator2 = function* (n) {
-      for (let i = 0; i < n; i++)
-        yield async () => {
-          await s3client.deleteObject(everything[i].key);
-        };
-    };
-    await runInBatches(generator2(everything.length), OP_CAP, 1_000);
+    // cleanup and test deleteObjects
+    expect(everything.length).toBe(totalKeys);
+    const massDelete = await s3client.deleteObjects(everything.map(o => o.Key));
+
+    // Check if all deletions were successful
+    const allDeleted = massDelete.every(result => result === true);
+    expect(massDelete).toBeInstanceOf(Array);
+    expect(massDelete.length).toBe(everything.length);
+    expect(allDeleted).toBe(true);
 
     // Verify bucket now empty for this prefix
     expect(await s3client.listObjects('/', prefix)).toEqual([]);

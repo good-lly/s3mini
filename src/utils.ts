@@ -17,6 +17,10 @@ export const hash = (content: string | Buffer): string => {
   return _createHash('sha256').update(content).digest('hex') as string;
 };
 
+export const md5base64 = (data: string | Buffer): string => {
+  return _createHash('md5').update(data).digest('base64') as string;
+};
+
 /**
  * Compute HMAC-SHA-256 of arbitrary data and return a hex string.
  * @param {string|Buffer} key      – secret key
@@ -76,31 +80,35 @@ const unescapeXml = (value: string): string =>
  * @param input raw XML string
  * @returns string for leaf nodes, otherwise a map of children
  */
+
 export const parseXml = (input: string): XmlValue => {
-  const RE_TAG = /<(\w)([-\w]+)(?:\/|[^>]*>((?:(?!<\1)[\s\S])*)<\/\1\2)>/gm;
+  const xmlContent = input.replace(/<\?xml[^?]*\?>\s*/, '');
+  const RE_TAG = /<([A-Za-z_][\w\-.]*)[^>]*>([\s\S]*?)<\/\1>/gm;
   const result: XmlMap = {}; // strong type, no `any`
   let match: RegExpExecArray | null;
 
-  while ((match = RE_TAG.exec(input)) !== null) {
-    const [, prefix = '', key, inner] = match;
-    const fullKey = `${prefix.toLowerCase()}${key}`;
-    const node: XmlValue = inner ? parseXml(inner) : '';
-
-    const current = result[fullKey];
+  while ((match = RE_TAG.exec(xmlContent)) !== null) {
+    const tagName = match[1];
+    const innerContent = match[2];
+    const node: XmlValue = innerContent ? parseXml(innerContent) : unescapeXml(innerContent?.trim() || '');
+    if (!tagName) {
+      continue;
+    }
+    const current = result[tagName];
     if (current === undefined) {
-      // first occurrence
-      result[fullKey] = node;
+      // First occurrence
+      result[tagName] = node;
     } else if (Array.isArray(current)) {
-      // already an array
+      // Already an array
       current.push(node);
     } else {
-      // promote to array on the second occurrence
-      result[fullKey] = [current, node];
+      // Promote to array on the second occurrence
+      result[tagName] = [current, node];
     }
   }
 
   // No child tags? — return the text, after entity decode
-  return Object.keys(result).length > 0 ? result : unescapeXml(input);
+  return Object.keys(result).length > 0 ? result : unescapeXml(xmlContent.trim());
 };
 
 /**

@@ -532,16 +532,14 @@ class s3mini {
           `${C.ERROR_PREFIX}Request failed with status ${res.status}: ${errorCode} - ${errorMessage}, err body: ${errorBody}`,
         );
       }
-
       const raw = U.parseXml(await res.text()) as Record<string, unknown>;
       if (typeof raw !== 'object' || !raw || 'error' in raw) {
         this._log('error', `${C.ERROR_PREFIX}Unexpected listObjects response shape: ${JSON.stringify(raw)}`);
         throw new Error(`${C.ERROR_PREFIX}Unexpected listObjects response shape`);
       }
-      const out = ('listBucketResult' in raw ? raw.listBucketResult : raw) as Record<string, unknown>;
-
+      const out = (raw.ListBucketResult || raw.listBucketResult || raw) as Record<string, unknown>;
       /* accumulate Contents */
-      const contents = out.contents;
+      const contents = out.Contents || out.contents; // S3 v2 vs v1
       if (contents) {
         const batch = Array.isArray(contents) ? contents : [contents];
         all.push(...(batch as object[]));
@@ -549,9 +547,9 @@ class s3mini {
           remaining -= batch.length;
         }
       }
-      const truncated = out.isTruncated === 'true' || out.IsTruncated === 'true';
+      const truncated = out.IsTruncated === 'true' || out.isTruncated === 'true' || false;
       token = truncated
-        ? ((out.nextContinuationToken || out.NextContinuationToken || out.nextMarker || out.NextMarker) as
+        ? ((out.NextContinuationToken || out.nextContinuationToken || out.NextMarker || out.nextMarker) as
             | string
             | undefined)
         : undefined;
@@ -595,7 +593,6 @@ class s3mini {
     //     etag: res.headers.get(C.HEADER_ETAG) ?? '',
     //   };
     // }
-
     const raw = U.parseXml(await res.text()) as unknown;
     if (typeof raw !== 'object' || raw === null) {
       throw new Error(`${C.ERROR_PREFIX}Unexpected listMultipartUploads response shape`);
@@ -848,17 +845,32 @@ class s3mini {
       headers,
       withQuery: true,
     });
+    const parsed = U.parseXml(await res.text()) as Record<string, unknown>;
 
-    const parsed = U.parseXml(await res.text()) as unknown;
+    // if (
+    //   parsed &&
+    //   typeof parsed === 'object' &&
+    //   'initiateMultipartUploadResult' in parsed &&
+    //   parsed.initiateMultipartUploadResult &&
+    //   'uploadId' in (parsed.initiateMultipartUploadResult as { uploadId: string })
+    // ) {
+    //   return (parsed.initiateMultipartUploadResult as { uploadId: string }).uploadId;
+    // }
 
-    if (
-      parsed &&
-      typeof parsed === 'object' &&
-      'initiateMultipartUploadResult' in parsed &&
-      parsed.initiateMultipartUploadResult &&
-      'uploadId' in (parsed.initiateMultipartUploadResult as { uploadId: string })
-    ) {
-      return (parsed.initiateMultipartUploadResult as { uploadId: string }).uploadId;
+    if (parsed && typeof parsed === 'object') {
+      // Check for both cases of InitiateMultipartUploadResult
+      const uploadResult =
+        (parsed.initiateMultipartUploadResult as Record<string, unknown>) ||
+        (parsed.InitiateMultipartUploadResult as Record<string, unknown>);
+
+      if (uploadResult && typeof uploadResult === 'object') {
+        // Check for both cases of uploadId
+        const uploadId = uploadResult.uploadId || uploadResult.UploadId;
+
+        if (uploadId && typeof uploadId === 'string') {
+          return uploadId;
+        }
+      }
     }
 
     throw new Error(`${C.ERROR_PREFIX}Failed to create multipart upload: ${JSON.stringify(parsed)}`);
@@ -938,22 +950,28 @@ class s3mini {
       withQuery: true,
     });
 
-    const parsed = U.parseXml(await res.text()) as unknown;
+    const parsed = U.parseXml(await res.text()) as Record<string, unknown>;
+    if (parsed && typeof parsed === 'object') {
+      // Check for both cases
+      const result = parsed.completeMultipartUploadResult || parsed.CompleteMultipartUploadResult || parsed;
 
-    const result: unknown =
-      parsed && typeof parsed === 'object' && 'completeMultipartUploadResult' in parsed
-        ? (parsed as { completeMultipartUploadResult: unknown }).completeMultipartUploadResult
-        : parsed;
+      if (result && typeof result === 'object') {
+        const resultObj = result as Record<string, unknown>;
 
-    if (!result || typeof result !== 'object') {
-      throw new Error(`${C.ERROR_PREFIX}Failed to complete multipart upload: ${JSON.stringify(parsed)}`);
+        // Handle ETag in all its variations
+        const etag = resultObj.ETag || resultObj.eTag || resultObj.etag;
+        if (etag && typeof etag === 'string') {
+          return {
+            ...resultObj,
+            etag: this.sanitizeETag(etag),
+          } as IT.CompleteMultipartUploadResult;
+        }
+
+        return result as IT.CompleteMultipartUploadResult;
+      }
     }
-    if ('ETag' in result || 'eTag' in result) {
-      (result as IT.CompleteMultipartUploadResult).etag = this.sanitizeETag(
-        (result as IT.CompleteMultipartUploadResult).eTag ?? (result as IT.CompleteMultipartUploadResult).ETag,
-      );
-    }
-    return result as IT.CompleteMultipartUploadResult;
+
+    throw new Error(`${C.ERROR_PREFIX}Failed to complete multipart upload: ${JSON.stringify(parsed)}`);
   }
 
   /**
@@ -985,8 +1003,7 @@ class s3mini {
       headers,
       withQuery: true,
     });
-
-    const parsed = U.parseXml(await res.text()) as object;
+    const parsed = U.parseXml(await res.text()) as Record<string, unknown>;
     if (
       parsed &&
       'error' in parsed &&
@@ -1028,20 +1045,70 @@ class s3mini {
     return res.status === 200 || res.status === 204;
   }
 
-  private _buildDeleteObjectsXml(keys: string[]): string {
-    return `
-      <Delete xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
-        ${keys
-          .map(
-            key => `
-          <Object>
-            <Key>${U.escapeXml(key)}</Key>
-          </Object>
-        `,
-          )
-          .join('')}
-      </Delete>
-    `;
+  private async _deleteObjectsProcess(keys: string[]): Promise<boolean[]> {
+    const xmlBody = `<Delete>${keys.map(key => `<Object><Key>${U.escapeXml(key)}</Key></Object>`).join('')}</Delete>`;
+    const query = { delete: '' };
+    const md5Base64 = U.md5base64(xmlBody);
+    const headers = {
+      [C.HEADER_CONTENT_TYPE]: C.XML_CONTENT_TYPE,
+      [C.HEADER_CONTENT_LENGTH]: Buffer.byteLength(xmlBody).toString(),
+      'Content-MD5': md5Base64,
+    };
+
+    const res = await this._signedRequest('POST', '', {
+      query,
+      body: xmlBody,
+      headers,
+      withQuery: true,
+    });
+    const parsed = U.parseXml(await res.text()) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== 'object') {
+      throw new Error(`${C.ERROR_PREFIX}Failed to delete objects: ${JSON.stringify(parsed)}`);
+    }
+    const out = (parsed.DeleteResult || parsed.deleteResult || parsed) as Record<string, unknown>;
+    const resultMap = new Map<string, boolean>();
+    keys.forEach(key => resultMap.set(key, false));
+    const deleted = out.deleted || out.Deleted;
+    if (deleted) {
+      const deletedArray = Array.isArray(deleted) ? deleted : [deleted];
+      deletedArray.forEach((item: unknown) => {
+        if (item && typeof item === 'object') {
+          const obj = item as Record<string, unknown>;
+          // Check both key and Key
+          const key = obj.key || obj.Key;
+          if (key && typeof key === 'string') {
+            resultMap.set(key, true);
+          }
+        }
+      });
+    }
+
+    // Handle errors (check both cases)
+    const errors = out.error || out.Error;
+    if (errors) {
+      const errorsArray = Array.isArray(errors) ? errors : [errors];
+      errorsArray.forEach((item: unknown) => {
+        if (item && typeof item === 'object') {
+          const obj = item as Record<string, unknown>;
+          // Check both cases for all properties
+          const key = obj.key || obj.Key;
+          const code = obj.code || obj.Code;
+          const message = obj.message || obj.Message;
+
+          if (key && typeof key === 'string') {
+            resultMap.set(key, false);
+            // Optionally log the error for debugging
+            this._log('warn', `Failed to delete object: ${key}`, {
+              code: code || 'Unknown',
+              message: message || 'Unknown error',
+            });
+          }
+        }
+      });
+    }
+
+    // Return boolean array in the same order as input keys
+    return keys.map(key => resultMap.get(key) || false);
   }
 
   /**
@@ -1053,52 +1120,19 @@ class s3mini {
     if (!Array.isArray(keys) || keys.length === 0) {
       return [];
     }
-    const xmlBody = this._buildDeleteObjectsXml(keys);
-    const query = { delete: '' };
-    const headers = {
-      [C.HEADER_CONTENT_TYPE]: C.XML_CONTENT_TYPE,
-      [C.HEADER_CONTENT_LENGTH]: Buffer.byteLength(xmlBody).toString(),
-    };
-    const res = await this._signedRequest('POST', '', {
-      query,
-      body: xmlBody,
-      headers,
-      withQuery: true,
-    });
-    const parsed = U.parseXml(await res.text()) as unknown;
-    if (!parsed || typeof parsed !== 'object') {
-      throw new Error(`${C.ERROR_PREFIX}Failed to delete objects: ${JSON.stringify(parsed)}`);
+    const maxBatchSize = 1000; // S3 limit for delete batch size
+    if (keys.length > maxBatchSize) {
+      const allPromises = [];
+      for (let i = 0; i < keys.length; i += maxBatchSize) {
+        const batch = keys.slice(i, i + maxBatchSize);
+        allPromises.push(this._deleteObjectsProcess(batch));
+      }
+      const results = await Promise.all(allPromises);
+      // Flatten the results array
+      return results.flat();
+    } else {
+      return await this._deleteObjectsProcess(keys);
     }
-    // Create a map to track results for each key
-    const resultMap = new Map<string, boolean>();
-
-    // Initialize all keys as false (not deleted)
-    keys.forEach(key => resultMap.set(key, false));
-    if ('deleted' in parsed) {
-      const deleted = Array.isArray(parsed.deleted) ? parsed.deleted : [parsed.deleted];
-      deleted.forEach((item: { key: string }) => {
-        if (item && typeof item === 'object' && 'key' in item) {
-          // Note: S3 returns keys in their original form (not URL-encoded)
-          resultMap.set(item.key, true);
-        }
-      });
-    }
-    if ('error' in parsed) {
-      const errors = Array.isArray(parsed.error) ? parsed.error : [parsed.error];
-      errors.forEach((item: { key: string; code: string; message: string }) => {
-        if (item && typeof item === 'object' && 'key' in item) {
-          resultMap.set(item.key, false);
-          // Optionally log the error for debugging
-          this._log('warn', `Failed to delete object: ${item.key}`, {
-            code: item.code,
-            message: item.message,
-          });
-        }
-      });
-    }
-
-    // Return boolean array in the same order as input keys
-    return keys.map(key => resultMap.get(key) || false);
   }
 
   private async _sendRequest(
