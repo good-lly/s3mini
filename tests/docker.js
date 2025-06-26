@@ -72,5 +72,5 @@ function run(cmd, args) {
   });
 }
 
-export const composeUp = file => run('docker', ['compose', '-f', file, 'up', '-d', '--force-recreate']);
+export const composeUp = file => run('docker', ['compose', '-f', file, 'up', '-d', '--force-recreate', '--wait']);
 export const composeDown = file => run('docker', ['compose', '-f', file, 'down', '--remove-orphans', '-v']);
