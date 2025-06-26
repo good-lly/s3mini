@@ -27,7 +27,7 @@ import * as U from './utils.js';
  * // Delete a file
  * await s3.deleteObject('example.txt');
  */
-class s3mini {
+class S3mini {
   /**
    * Creates an instance of the S3 class.
    *
@@ -1192,5 +1192,10 @@ class s3mini {
   }
 }
 
-export { s3mini };
-export default s3mini;
+/**
+ * @deprecated Use `S3mini` instead.
+ */
+const s3mini = S3mini;
+
+export { S3mini, s3mini };
+export default S3mini;

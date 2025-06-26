@@ -7,7 +7,7 @@ import {
   PutObjectCommand,
 } from '@aws-sdk/client-s3';
 import * as Minio from 'minio';
-import { s3mini } from '../../dist/s3mini.min.js';
+import { S3mini } from '../../dist/s3mini.min.js';
 import { Bench } from 'tinybench';
 import { tinybenchPrinter } from '@monstermann/tinybench-pretty-printer';
 import { randomBytes, randomUUID } from 'node:crypto';
@@ -87,7 +87,7 @@ const makeMinio = () => {
 };
 
 const makeS3mini = () => {
-  const client = new s3mini({
+  const client = new S3mini({
     accessKeyId: ACCESS_KEY,
     secretAccessKey: SECRET_KEY,
     endpoint: ENDPOINT,
@@ -101,7 +101,7 @@ const makeS3mini = () => {
     del: k => client.deleteObject(k),
   };
 };
-const s3minichecker = new s3mini({
+const s3minichecker = new S3mini({
   accessKeyId: ACCESS_KEY,
   secretAccessKey: SECRET_KEY,
   endpoint: ENDPOINT,

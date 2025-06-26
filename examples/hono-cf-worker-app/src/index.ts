@@ -1,10 +1,10 @@
 import { Hono } from 'hono';
-import { s3mini } from '../../../dist/s3mini.js';
+import { S3mini } from '../../../dist/s3mini.js';
 
 const app = new Hono();
 
 app.get('/', c => {
-  const s3 = new s3mini({});
+  const s3 = new S3mini({});
   return c.text('Hello Hono!');
 });
 

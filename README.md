@@ -100,10 +100,14 @@ mv example.env .env
 
 ## Usage
 
-```typescript
-import { s3mini, sanitizeETag } from 's3mini';
+> [!WARNING]
+> `s3mini` is a deprecated alias retained solely for backward compatibility.
+> It is scheduled for removal in a future release. Please migrate to the new `S3mini` class.
 
-const s3client = new s3mini({
+```typescript
+import { S3mini, sanitizeETag } from 's3mini';
+
+const s3client = new S3mini({
   accessKeyId: config.accessKeyId,
   secretAccessKey: config.secretAccessKey,
   endpoint: config.endpoint,
@@ -150,7 +154,7 @@ const objectData: string | null = await s3client.getObject(smallObjectKey);
 console.log('Object data:', objectData);
 
 // get the object with ETag, null if not found
-const response2: Response = await s3mini.getObject(smallObjectKey, { 'if-none-match': etag });
+const response2: Response = await S3mini.getObject(smallObjectKey, { 'if-none-match': etag });
 if (response2) {
   // ETag changed so we can get the object data and new ETag
   // Note: ETag is not guaranteed to be the same as the MD5 hash of the object
