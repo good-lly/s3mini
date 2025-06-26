@@ -4,7 +4,7 @@ import * as dotenv from 'dotenv';
 dotenv.config();
 
 import { join } from 'node:path';
-import { composeUp, execDockerCommand } from './docker.js';
+import { composeUp, composeUpWait, execDockerCommand } from './docker.js';
 
 import { promisify } from 'util';
 import { exec } from 'child_process';
@@ -217,18 +217,17 @@ export default async () => {
   for (const cfg of bucketConfigs) {
     const composeFile = composeFiles[cfg.provider];
     if (!composeFile) continue;
+    console.log(`⏫  starting ${cfg.provider} image …`);
     switch (cfg.provider) {
       case 'minio':
         process.env.MINIO_ROOT_USER = cfg.accessKeyId;
         process.env.MINIO_ROOT_PASSWORD = cfg.secretAccessKey;
+        await composeUpWait(composeFile);
         break;
-      // case 'ceph':
-      //   process.env.CEPH_ACCESS_KEY = cfg.accessKeyId;
-      //   process.env.CEPH_SECRET_KEY = cfg.secretAccessKey;
-      //   break;
+      default:
+        await composeUp(composeFile);
     }
-    console.log(`⏫  starting ${cfg.provider} image …`);
-    await composeUp(composeFile);
+
     if (cfg.provider === 'garage') {
       await garageInit();
     }

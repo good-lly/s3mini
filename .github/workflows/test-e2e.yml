@@ -3,13 +3,16 @@ name: Test:e2e(all)
 on:
   push:
     branches: [dev]
-  pull_request:
+  pull_request_target:
     branches: [dev]
 env:
   BUCKET_ENV_BACKBLAZE: ${{ secrets.BUCKET_ENV_BACKBLAZE }}
   BUCKET_ENV_MINIO: ${{ secrets.BUCKET_ENV_MINIO }}
   BUCKET_ENV_CLOUDFLARE: ${{ secrets.BUCKET_ENV_CLOUDFLARE }}
   BUCKET_ENV_DIGITALOCEAN: ${{ secrets.BUCKET_ENV_DIGITALOCEAN }}
+  BUCKET_ENV_GARAGE: ${{ secrets.BUCKET_ENV_GARAGE }}
+  BUCKET_ENV_CEPH: ${{ secrets.BUCKET_ENV_CEPH }}
+  BUCKET_ENV_ORACLE: ${{ secrets.BUCKET_ENV_ORACLE }}
 
 jobs:
   test:
@@ -41,6 +44,9 @@ jobs:
           command: npm run test:e2e
         env:
           BUCKET_ENV_BACKBLAZE: ${{ secrets.BUCKET_ENV_BACKBLAZE }}
-          BUCKET_ENV_MINIO: ${{ secrets.BUCKET_ENV_MINIO }}
           BUCKET_ENV_CLOUDFLARE: ${{ secrets.BUCKET_ENV_CLOUDFLARE }}
           BUCKET_ENV_DIGITALOCEAN: ${{ secrets.BUCKET_ENV_DIGITALOCEAN }}
+          BUCKET_ENV_GARAGE: ${{ secrets.BUCKET_ENV_GARAGE }}
+          BUCKET_ENV_MINIO: ${{ secrets.BUCKET_ENV_MINIO }}
+          BUCKET_ENV_CEPH: ${{ secrets.BUCKET_ENV_CEPH }}
+          BUCKET_ENV_ORACLE: ${{ secrets.BUCKET_ENV_ORACLE }}
