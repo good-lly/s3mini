@@ -8,13 +8,17 @@
 
 #### Constructor
 
+> [!WARNING]
+> `s3mini` is a deprecated alias retained solely for backward compatibility.
+> It is scheduled for removal in a future release. Please migrate to the new `S3mini` class.
+
 Create a new instance of the s3mini client:
 
 ```javascript
-import { s3mini } from 's3mini';
+import { S3mini } from 's3mini';
 // add S3Config types if needed for Typescript
 
-const s3client = new s3mini({
+const s3client = new S3mini({
   accessKeyId: 'YOUR_ACCESS_KEY_ID',
   secretAccessKey: 'YOUR_SECRET_ACCESS_KEY',
   endpoint: 'https://s3.amazonaws.com/...', // S3 endpoint (use your region or custom domain) including bucket name
@@ -191,7 +195,7 @@ console.log(`Multipart upload aborted: ${JSON.stringify(result)}`);
 #### Sanitize ETag
 
 ```javascript
-import { s3client, sanitizeETag } from 's3mini';
+import { sanitizeETag } from 's3mini';
 ...
 const rawETag = '\"abcdef1234567890\"';
 const sanitizedETag = s3client.sanitizeETag(rawETag);
@@ -203,7 +207,7 @@ console.log(`Sanitized ETag: ${sanitizedETag}`); // Outputs: abcdef1234567890
 Some operations can be rate-limited. Use the `runInBatches` method to process items in batches within a specified time interval:
 
 ```javascript
-import { s3client, runInBatches } from 's3mini';
+import { runInBatches } from 's3mini';
 const OP_CAP = 50; // Max operations per second
 const INTERVAL = 1_000; // Interval in milliseconds
 const generator = function* (n) {
@@ -260,7 +264,7 @@ const customLogger = {
   },
 };
 
-const s3client = new S3({
+const s3client = new S3mini({
   // Other parameters
   logger?: customLogger,
 });

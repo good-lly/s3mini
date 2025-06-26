@@ -1,6 +1,6 @@
 'use strict';
 
-import { s3mini } from '../dist/S3mini.js';
+import { S3mini } from '../../dist/s3mini.js';
 import * as dotenv from 'dotenv';
 dotenv.config({ debug: false });
 
@@ -24,7 +24,7 @@ const providers = bucketEnv.map(bucket => bucket.provider);
 console.log('Configured providers:', providers);
 
 (async () => {
-  const s3client = new s3mini(bucketEnv[0]);
+  const s3client = new S3mini(bucketEnv[0]);
   console.log('s3mini instance:', bucketEnv[0], s3client);
 
   // Head bucket - check if the bucket exists

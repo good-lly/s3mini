@@ -1,6 +1,6 @@
 'use strict';
 import { jest, it, expect, describe } from '@jest/globals';
-import { s3mini, sanitizeETag, runInBatches } from '../dist/s3mini.js';
+import { S3mini, s3mini, sanitizeETag, runInBatches } from '../dist/s3mini.js';
 import { randomBytes } from 'node:crypto';
 
 export const beforeRun = (raw, name) => {
@@ -50,7 +50,7 @@ const specialCharKey = 'special-char key with spaces.txt';
 export const testRunner = bucket => {
   jest.setTimeout(120_000);
 
-  const s3client = new s3mini({
+  const s3client = new S3mini({
     accessKeyId: bucket.accessKeyId,
     secretAccessKey: bucket.secretAccessKey,
     endpoint: bucket.endpoint,
@@ -77,8 +77,13 @@ export const testRunner = bucket => {
     }
   });
 
+  it('accepts deprecated alias s3mini for backward compatibility', () => {
+    expect(S3mini).toBe(s3mini);
+    expect(s3client).toBeInstanceOf(s3mini);
+  });
+
   it('instantiates s3client', () => {
-    expect(s3client).toBeInstanceOf(s3mini); // ← updated expectation
+    expect(s3client).toBeInstanceOf(S3mini); // ← updated expectation
   });
 
   it('bucket exists', async () => {
@@ -90,7 +95,7 @@ export const testRunner = bucket => {
     }
     expect(exists).toBe(true);
 
-    const nonExistentBucket = new s3mini({
+    const nonExistentBucket = new S3mini({
       accessKeyId: bucket.accessKeyId,
       secretAccessKey: bucket.secretAccessKey,
       endpoint: bucket.endpoint + '/non-existent-bucket',
