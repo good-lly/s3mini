@@ -1,6 +1,10 @@
 services:
   garage:
     container_name: garage
+    run: |
+      echo "=== Directory structure ==="
+      ls -la ./garage/ || echo "garage directory doesn't exist"
+
     image: docker.io/dxflrs/garage:v2.0.0
     volumes:
       # config

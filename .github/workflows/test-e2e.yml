@@ -3,7 +3,7 @@ name: Test:e2e(all)
 on:
   push:
     branches: [dev]
-  pull_request:
+  pull_request_target:
     branches: [dev]
 env:
   BUCKET_ENV_BACKBLAZE: ${{ secrets.BUCKET_ENV_BACKBLAZE }}
