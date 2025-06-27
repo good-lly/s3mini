@@ -773,11 +773,15 @@ class S3mini {
   public async getEtag(key: string, opts: Record<string, unknown> = {}): Promise<string | null> {
     const res = await this._signedRequest('HEAD', key, {
       query: opts,
-      tolerated: [200, 404],
+      tolerated: [200, 304, 404, 412],
     });
 
     if (res.status === 404) {
       return null;
+    }
+
+    if (res.status === 412 || res.status === 304) {
+      return null; // ETag mismatch
     }
 
     const etag = res.headers.get(C.HEADER_ETAG);

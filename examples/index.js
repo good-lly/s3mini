@@ -1,6 +1,6 @@
 'use strict';
 
-import { S3mini } from '../dist/s3mini.js';
+import { S3mini, sanitizeETag } from '../dist/s3mini.js';
 import * as dotenv from 'dotenv';
 dotenv.config({ debug: false });
 
@@ -51,22 +51,26 @@ console.log('Configured providers:', providers);
       for (let i = 0; i < 5; i++) {
         const key = `example-${i}.txt`;
         const response = await s3client.putObject(key, `Hello, World! ${i}`);
+        const etag = sanitizeETag(response.headers.get('etag'));
+        const getEtagIfMatch = await s3client.getEtag(key, { 'if-none-match': etag });
+        console.log(`ETag for ${key}: ${etag}`);
+        console.log(`ETag matches: ${getEtagIfMatch}`);
         console.log(`File ${key} uploaded successfully: ${response.status === 200}`);
       }
-      const listResponse = await s3client.listObjects();
-      const keyArray = [];
-      console.log('Files in bucket:');
-      listResponse.forEach(file => {
-        console.log(`- ${file.key}`);
-        keyArray.push(file.key);
-      });
-      const deleteResponse = await s3client.deleteObjects(keyArray);
-      console.log(`Files deleted: ${deleteResponse}`);
-      const listAfterDelete = await s3client.listObjects();
-      console.log('Files after deletion:');
-      listAfterDelete.forEach(file => {
-        console.log(`- ${file.key}`);
-      });
+      // const listResponse = await s3client.listObjects();
+      // const keyArray = [];
+      // console.log('Files in bucket:');
+      // listResponse.forEach(file => {
+      //   console.log(`- ${file.key}`);
+      //   keyArray.push(file.key);
+      // });
+      // const deleteResponse = await s3client.deleteObjects(keyArray);
+      // console.log(`Files deleted: ${deleteResponse}`);
+      // const listAfterDelete = await s3client.listObjects();
+      // console.log('Files after deletion:');
+      // listAfterDelete.forEach(file => {
+      //   console.log(`- ${file.key}`);
+      // });
     }
   } catch (error) {
     console.error('Error checking bucket existence:', error);

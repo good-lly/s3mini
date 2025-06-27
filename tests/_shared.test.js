@@ -299,6 +299,13 @@ export const testRunner = bucket => {
     expect(objectEtag).toBe(etag);
     expect(objectEtag.length).toBe(32 + 2); // 32 chars + 2 number of parts flag
 
+    // test getEtag with opts mis/match
+    const etagMatch = await s3client.getEtag(multipartKey, { 'if-match': etag });
+    expect(etagMatch).toBe(etag);
+
+    const etagMismatch = await s3client.getEtag(multipartKey, { 'if-match': 'wrong-etag' });
+    expect(etagMismatch).toBe(null);
+
     const delResp = await s3client.deleteObject(multipartKey);
     expect(delResp).toBe(true);
 
