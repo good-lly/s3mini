@@ -52,7 +52,24 @@ const configs = process.env['BUCKET_ENV_CLOUDFLARE'].split(',');
     if (getObjectResponse) {
       console.log('File content:', getObjectResponse);
     }
-    // }
+
+    // add new object without SSE-C
+    const newKey = 'myobjectname2';
+    const newResponse = await s3client.putObject(newKey, fileContent);
+    console.log(`New file uploaded successfully: ${newResponse.status === 200}`);
+
+    // add new object with SSE-C
+    const newSsecHeaders = {
+      'x-amz-server-side-encryption-customer-algorithm': 'AES256',
+      'x-amz-server-side-encryption-customer-key': 'n1TKiTaVHlYLMX9n0zHXyooMr026vOiTEFfT+719Hho=',
+      'x-amz-server-side-encryption-customer-key-md5': 'gepZmzgR7Be/1+K1Aw+6ow==',
+    };
+    const newSsecResponse = await s3client.putObject(newKey, fileContent, undefined, newSsecHeaders);
+    console.log(`New file with SSE-C uploaded successfully: ${newSsecResponse.status === 200}`);
+
+    // list all objects in the bucket
+    const listResponse = await s3client.listObjects();
+    console.log('List of objects in the bucket:', listResponse);
   } catch (error) {
     console.error('Error checking bucket existence:', error);
   }

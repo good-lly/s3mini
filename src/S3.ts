@@ -480,7 +480,7 @@ class S3mini {
    * @param {string} [prefix=''] - The prefix to filter objects by.
    * @param {number} [maxKeys] - The maximum number of keys to return. If not provided, all keys will be returned.
    * @param {Record<string, unknown>} [opts={}] - Additional options for the request.
-   * @returns {Promise<object[] | null>} A promise that resolves to an array of objects or null if the bucket is empty.
+   * @returns {Promise<IT.ListObject[] | null>} A promise that resolves to an array of objects or null if the bucket is empty.
    * @example
    * // List all objects
    * const objects = await s3.listObjects();
@@ -494,7 +494,7 @@ class S3mini {
     maxKeys?: number,
     // method: IT.HttpMethod = 'GET', // 'GET' or 'HEAD'
     opts: Record<string, unknown> = {},
-  ): Promise<object[] | null> {
+  ): Promise<IT.ListObject[] | null> {
     this._checkDelimiter(delimiter);
     this._checkPrefix(prefix);
     this._checkOpts(opts);
@@ -504,7 +504,7 @@ class S3mini {
     const unlimited = !(maxKeys && maxKeys > 0);
     let remaining = unlimited ? Infinity : maxKeys;
     let token: string | undefined;
-    const all: object[] = [];
+    const all: IT.ListObject[] = [];
 
     do {
       const batchSize = Math.min(remaining, 1000); // S3 ceiling
@@ -547,7 +547,7 @@ class S3mini {
       const contents = out.Contents || out.contents; // S3 v2 vs v1
       if (contents) {
         const batch = Array.isArray(contents) ? contents : [contents];
-        all.push(...(batch as object[]));
+        all.push(...(batch as IT.ListObject[]));
         if (!unlimited) {
           remaining -= batch.length;
         }

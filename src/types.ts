@@ -39,6 +39,14 @@ export interface UploadPart {
   etag: string;
 }
 
+export interface ListObject {
+  Key: string;
+  Size: number;
+  LastModified: Date;
+  ETag: string;
+  StorageClass: string;
+}
+
 export interface CompleteMultipartUploadResult {
   location: string;
   bucket: string;
