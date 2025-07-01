@@ -260,8 +260,17 @@ class S3mini {
     headers[C.HEADER_AMZ_CONTENT_SHA256] = C.UNSIGNED_PAYLOAD; // body ? U.hash(body) : C.UNSIGNED_PAYLOAD;
     headers[C.HEADER_AMZ_DATE] = fullDatetime;
     headers[C.HEADER_HOST] = url.host;
-    const canonicalHeaders = this._buildCanonicalHeaders(headers);
-    const signedHeaders = Object.keys(headers)
+    // sort headers alphabetically by key
+    const ignoredHeaders = ['authorization', 'content-length', 'content-type', 'user-agent'];
+    let headersForSigning = Object.fromEntries(
+      Object.entries(headers).filter(([key]) => !ignoredHeaders.includes(key.toLowerCase())),
+    );
+
+    headersForSigning = Object.fromEntries(
+      Object.entries(headersForSigning).sort(([keyA], [keyB]) => keyA.localeCompare(keyB)),
+    );
+    const canonicalHeaders = this._buildCanonicalHeaders(headersForSigning);
+    const signedHeaders = Object.keys(headersForSigning)
       .map(key => key.toLowerCase())
       .sort()
       .join(';');
@@ -277,7 +286,6 @@ class S3mini {
   private _buildCanonicalHeaders(headers: Record<string, string | number>): string {
     return Object.entries(headers)
       .map(([key, value]) => `${key.toLowerCase()}:${String(value).trim()}`)
-      .sort()
       .join('\n');
   }
 
@@ -288,14 +296,15 @@ class S3mini {
     canonicalHeaders: string,
     signedHeaders: string,
   ): string {
-    return [
+    const parts = [
       method,
       url.pathname,
       this._buildCanonicalQueryString(query),
-      `${canonicalHeaders}\n`,
+      canonicalHeaders + '\n', // Canonical headers end with extra newline
       signedHeaders,
       C.UNSIGNED_PAYLOAD,
-    ].join('\n');
+    ];
+    return parts.join('\n');
   }
 
   private _buildCredentialScope(shortDatetime: string): string {
@@ -332,9 +341,9 @@ class S3mini {
       tolerated = [], // [200, 404] etc.
       withQuery = false, // append query string to signed URL
     }: {
-      query?: Record<string, unknown>;
+      query?: Record<string, unknown> | undefined;
       body?: string | Buffer | undefined;
-      headers?: Record<string, string | number | undefined>;
+      headers?: Record<string, string | number | undefined> | IT.SSECHeaders | undefined;
       tolerated?: number[] | undefined;
       withQuery?: boolean | undefined;
     } = {},
@@ -343,14 +352,10 @@ class S3mini {
     if (!['GET', 'HEAD', 'PUT', 'POST', 'DELETE'].includes(method)) {
       throw new Error(`${C.ERROR_PREFIX}Unsupported HTTP method ${method as string}`);
     }
-    if (key) {
-      this._checkKey(key); // allow '' for bucket‑level
-    }
 
     const { filteredOpts, conditionalHeaders } = ['GET', 'HEAD'].includes(method)
       ? this._filterIfHeaders(query)
       : { filteredOpts: query, conditionalHeaders: {} };
-
     const baseHeaders: Record<string, string | number> = {
       [C.HEADER_AMZ_CONTENT_SHA256]: C.UNSIGNED_PAYLOAD,
       // ...(['GET', 'HEAD'].includes(method) ? { [C.HEADER_CONTENT_TYPE]: C.JSON_CONTENT_TYPE } : {}),
@@ -607,11 +612,21 @@ class S3mini {
    * Get an object from the S3-compatible service.
    * This method sends a request to retrieve the specified object from the S3-compatible service.
    * @param {string} key - The key of the object to retrieve.
-   * @param {Record<string, unknown>} [opts={}] - Additional options for the request.
+   * @param {Record<string, unknown>} [opts] - Additional options for the request.
+   * @param {IT.SSECHeaders} [ssecHeaders] - Server-Side Encryption headers, if any.
    * @returns A promise that resolves to the object data (string) or null if not found.
    */
-  public async getObject(key: string, opts: Record<string, unknown> = {}): Promise<string | null> {
-    const res = await this._signedRequest('GET', key, { query: opts, tolerated: [200, 404, 412, 304] });
+  public async getObject(
+    key: string,
+    opts: Record<string, unknown> = {},
+    ssecHeaders?: IT.SSECHeaders,
+  ): Promise<string | null> {
+    // if ssecHeaders is set, add it to headers
+    const res = await this._signedRequest('GET', key, {
+      query: opts, // use opts.query if it exists, otherwise use an empty object
+      tolerated: [200, 404, 412, 304],
+      headers: ssecHeaders ? { ...ssecHeaders } : undefined,
+    });
     if ([404, 412, 304].includes(res.status)) {
       return null;
     }
@@ -623,10 +638,19 @@ class S3mini {
    * This method sends a request to retrieve the specified object and returns the full response.
    * @param {string} key - The key of the object to retrieve.
    * @param {Record<string, unknown>} [opts={}] - Additional options for the request.
+   * @param {IT.SSECHeaders} [ssecHeaders] - Server-Side Encryption headers, if any.
    * @returns A promise that resolves to the Response object or null if not found.
    */
-  public async getObjectResponse(key: string, opts: Record<string, unknown> = {}): Promise<Response | null> {
-    const res = await this._signedRequest('GET', key, { query: opts, tolerated: [200, 404, 412, 304] });
+  public async getObjectResponse(
+    key: string,
+    opts: Record<string, unknown> = {},
+    ssecHeaders?: IT.SSECHeaders,
+  ): Promise<Response | null> {
+    const res = await this._signedRequest('GET', key, {
+      query: opts,
+      tolerated: [200, 404, 412, 304],
+      headers: ssecHeaders ? { ...ssecHeaders } : undefined,
+    });
     if ([404, 412, 304].includes(res.status)) {
       return null;
     }
@@ -638,10 +662,19 @@ class S3mini {
    * This method sends a request to retrieve the specified object and returns it as an ArrayBuffer.
    * @param {string} key - The key of the object to retrieve.
    * @param {Record<string, unknown>} [opts={}] - Additional options for the request.
+   * @param {IT.SSECHeaders} [ssecHeaders] - Server-Side Encryption headers, if any.
    * @returns A promise that resolves to the object data as an ArrayBuffer or null if not found.
    */
-  public async getObjectArrayBuffer(key: string, opts: Record<string, unknown> = {}): Promise<ArrayBuffer | null> {
-    const res = await this._signedRequest('GET', key, { query: opts, tolerated: [200, 404, 412, 304] });
+  public async getObjectArrayBuffer(
+    key: string,
+    opts: Record<string, unknown> = {},
+    ssecHeaders?: IT.SSECHeaders,
+  ): Promise<ArrayBuffer | null> {
+    const res = await this._signedRequest('GET', key, {
+      query: opts,
+      tolerated: [200, 404, 412, 304],
+      headers: ssecHeaders ? { ...ssecHeaders } : undefined,
+    });
     if ([404, 412, 304].includes(res.status)) {
       return null;
     }
@@ -653,10 +686,19 @@ class S3mini {
    * This method sends a request to retrieve the specified object and returns it as JSON.
    * @param {string} key - The key of the object to retrieve.
    * @param {Record<string, unknown>} [opts={}] - Additional options for the request.
+   * @param {IT.SSECHeaders} [ssecHeaders] - Server-Side Encryption headers, if any.
    * @returns A promise that resolves to the object data as JSON or null if not found.
    */
-  public async getObjectJSON<T = unknown>(key: string, opts: Record<string, unknown> = {}): Promise<T | null> {
-    const res = await this._signedRequest('GET', key, { query: opts, tolerated: [200, 404, 412, 304] });
+  public async getObjectJSON<T = unknown>(
+    key: string,
+    opts: Record<string, unknown> = {},
+    ssecHeaders?: IT.SSECHeaders,
+  ): Promise<T | null> {
+    const res = await this._signedRequest('GET', key, {
+      query: opts,
+      tolerated: [200, 404, 412, 304],
+      headers: ssecHeaders ? { ...ssecHeaders } : undefined,
+    });
     if ([404, 412, 304].includes(res.status)) {
       return null;
     }
@@ -668,14 +710,20 @@ class S3mini {
    * This method sends a request to retrieve the specified object and its ETag.
    * @param {string} key - The key of the object to retrieve.
    * @param {Record<string, unknown>} [opts={}] - Additional options for the request.
+   * @param {IT.SSECHeaders} [ssecHeaders] - Server-Side Encryption headers, if any.
    * @returns A promise that resolves to an object containing the ETag and the object data as an ArrayBuffer or null if not found.
    */
   public async getObjectWithETag(
     key: string,
     opts: Record<string, unknown> = {},
+    ssecHeaders?: IT.SSECHeaders,
   ): Promise<{ etag: string | null; data: ArrayBuffer | null }> {
     try {
-      const res = await this._signedRequest('GET', key, { query: opts, tolerated: [200, 404, 412, 304] });
+      const res = await this._signedRequest('GET', key, {
+        query: opts,
+        tolerated: [200, 404, 412, 304],
+        headers: ssecHeaders ? { ...ssecHeaders } : undefined,
+      });
 
       if ([404, 412, 304].includes(res.status)) {
         return { etag: null, data: null };
@@ -700,6 +748,7 @@ class S3mini {
    * @param {number} [rangeFrom=0] - The starting byte for the range (if not whole file).
    * @param {number} [rangeTo=this.requestSizeInBytes] - The ending byte for the range (if not whole file).
    * @param {Record<string, unknown>} [opts={}] - Additional options for the request.
+   * @param {IT.SSECHeaders} [ssecHeaders] - Server-Side Encryption headers, if any.
    * @returns A promise that resolves to the Response object.
    */
   public async getObjectRaw(
@@ -708,12 +757,13 @@ class S3mini {
     rangeFrom = 0,
     rangeTo = this.requestSizeInBytes,
     opts: Record<string, unknown> = {},
+    ssecHeaders?: IT.SSECHeaders,
   ): Promise<Response> {
     const rangeHdr: Record<string, string | number> = wholeFile ? {} : { range: `bytes=${rangeFrom}-${rangeTo - 1}` };
 
     return this._signedRequest('GET', key, {
       query: { ...opts },
-      headers: rangeHdr,
+      headers: { ...rangeHdr, ...ssecHeaders },
       withQuery: true, // keep ?query=string behaviour
     });
   }
@@ -725,9 +775,11 @@ class S3mini {
    * @returns A promise that resolves to the content length of the object in bytes, or 0 if not found.
    * @throws {Error} If the content length header is not found in the response.
    */
-  public async getContentLength(key: string): Promise<number> {
+  public async getContentLength(key: string, ssecHeaders?: IT.SSECHeaders): Promise<number> {
     try {
-      const res = await this._signedRequest('HEAD', key);
+      const res = await this._signedRequest('HEAD', key, {
+        headers: ssecHeaders ? { ...ssecHeaders } : undefined,
+      });
       const len = res.headers.get(C.HEADER_CONTENT_LENGTH);
       return len ? +len : 0;
     } catch (err) {
@@ -762,6 +814,7 @@ class S3mini {
    * Retrieves the ETag of an object without downloading its content.
    * @param {string} key - The key of the object to retrieve the ETag for.
    * @param {Record<string, unknown>} [opts={}] - Additional options for the request.
+   * @param {IT.SSECHeaders} [ssecHeaders] - Server-Side Encryption headers, if any.
    * @returns {Promise<string | null>} A promise that resolves to the ETag value or null if the object is not found.
    * @throws {Error} If the ETag header is not found in the response.
    * @example
@@ -770,10 +823,15 @@ class S3mini {
    *   console.log(`File ETag: ${etag}`);
    * }
    */
-  public async getEtag(key: string, opts: Record<string, unknown> = {}): Promise<string | null> {
+  public async getEtag(
+    key: string,
+    opts: Record<string, unknown> = {},
+    ssecHeaders?: IT.SSECHeaders,
+  ): Promise<string | null> {
     const res = await this._signedRequest('HEAD', key, {
       query: opts,
       tolerated: [200, 304, 404, 412],
+      headers: ssecHeaders ? { ...ssecHeaders } : undefined,
     });
 
     if (res.status === 404) {
@@ -797,6 +855,7 @@ class S3mini {
    * @param {string} key - The key/path where the object will be stored.
    * @param {string | Buffer} data - The data to upload (string or Buffer).
    * @param {string} [fileType='application/octet-stream'] - The MIME type of the file.
+   * @param {IT.SSECHeaders} [ssecHeaders] - Server-Side Encryption headers, if any.
    * @returns {Promise<Response>} A promise that resolves to the Response object from the upload request.
    * @throws {TypeError} If data is not a string or Buffer.
    * @example
@@ -811,6 +870,7 @@ class S3mini {
     key: string,
     data: string | Buffer,
     fileType: string = C.DEFAULT_STREAM_CONTENT_TYPE,
+    ssecHeaders?: IT.SSECHeaders,
   ): Promise<Response> {
     if (!(data instanceof Buffer || typeof data === 'string')) {
       throw new TypeError(C.ERROR_DATA_BUFFER_REQUIRED);
@@ -820,6 +880,7 @@ class S3mini {
       headers: {
         [C.HEADER_CONTENT_LENGTH]: typeof data === 'string' ? Buffer.byteLength(data) : data.length,
         [C.HEADER_CONTENT_TYPE]: fileType,
+        ...ssecHeaders,
       },
       tolerated: [200],
     });
@@ -829,6 +890,7 @@ class S3mini {
    * Initiates a multipart upload and returns the upload ID.
    * @param {string} key - The key/path where the object will be stored.
    * @param {string} [fileType='application/octet-stream'] - The MIME type of the file.
+   * @param {IT.SSECHeaders?} [ssecHeaders] - Server-Side Encryption headers, if any.
    * @returns {Promise<string>} A promise that resolves to the upload ID for the multipart upload.
    * @throws {TypeError} If key is invalid or fileType is not a string.
    * @throws {Error} If the multipart upload fails to initialize.
@@ -836,13 +898,17 @@ class S3mini {
    * const uploadId = await s3.getMultipartUploadId('large-file.zip', 'application/zip');
    * console.log(`Started multipart upload: ${uploadId}`);
    */
-  public async getMultipartUploadId(key: string, fileType: string = C.DEFAULT_STREAM_CONTENT_TYPE): Promise<string> {
+  public async getMultipartUploadId(
+    key: string,
+    fileType: string = C.DEFAULT_STREAM_CONTENT_TYPE,
+    ssecHeaders?: IT.SSECHeaders,
+  ): Promise<string> {
     this._checkKey(key);
     if (typeof fileType !== 'string') {
       throw new TypeError(`${C.ERROR_PREFIX}fileType must be a string`);
     }
     const query = { uploads: '' };
-    const headers = { [C.HEADER_CONTENT_TYPE]: fileType };
+    const headers = { [C.HEADER_CONTENT_TYPE]: fileType, ...ssecHeaders };
 
     const res = await this._signedRequest('POST', key, {
       query,
@@ -887,6 +953,7 @@ class S3mini {
    * @param {Buffer | string} data - The data for this part.
    * @param {number} partNumber - The part number (must be between 1 and 10,000).
    * @param {Record<string, unknown>} [opts={}] - Additional options for the request.
+   * @param {IT.SSECHeaders} [ssecHeaders] - Server-Side Encryption headers, if any.
    * @returns {Promise<IT.UploadPart>} A promise that resolves to an object containing the partNumber and etag.
    * @throws {TypeError} If any parameter is invalid.
    * @example
@@ -904,6 +971,7 @@ class S3mini {
     data: Buffer | string,
     partNumber: number,
     opts: Record<string, unknown> = {},
+    ssecHeaders?: IT.SSECHeaders,
   ): Promise<IT.UploadPart> {
     this._validateUploadPartParams(key, uploadId, data, partNumber, opts);
 
@@ -911,7 +979,10 @@ class S3mini {
     const res = await this._signedRequest('PUT', key, {
       query,
       body: data,
-      headers: { [C.HEADER_CONTENT_LENGTH]: typeof data === 'string' ? Buffer.byteLength(data) : data.length },
+      headers: {
+        [C.HEADER_CONTENT_LENGTH]: typeof data === 'string' ? Buffer.byteLength(data) : data.length,
+        ...ssecHeaders,
+      },
     });
 
     return { partNumber, etag: U.sanitizeETag(res.headers.get('etag') || '') };
@@ -982,6 +1053,7 @@ class S3mini {
    * Aborts a multipart upload and removes all uploaded parts.
    * @param {string} key - The key of the object being uploaded.
    * @param {string} uploadId - The upload ID to abort.
+   * @param {IT.SSECHeaders} [ssecHeaders] - Server-Side Encryption headers, if any.
    * @returns {Promise<object>} A promise that resolves to an object containing the abort status and details.
    * @throws {TypeError} If key or uploadId is invalid.
    * @throws {Error} If the abort operation fails.
@@ -993,14 +1065,14 @@ class S3mini {
    *   console.error('Failed to abort upload:', error);
    * }
    */
-  public async abortMultipartUpload(key: string, uploadId: string): Promise<object> {
+  public async abortMultipartUpload(key: string, uploadId: string, ssecHeaders?: IT.SSECHeaders): Promise<object> {
     this._checkKey(key);
     if (!uploadId) {
       throw new TypeError(C.ERROR_UPLOAD_ID_REQUIRED);
     }
 
     const query = { uploadId };
-    const headers = { [C.HEADER_CONTENT_TYPE]: C.XML_CONTENT_TYPE };
+    const headers = { [C.HEADER_CONTENT_TYPE]: C.XML_CONTENT_TYPE, ...(ssecHeaders ? { ...ssecHeaders } : {}) };
 
     const res = await this._signedRequest('DELETE', key, {
       query,

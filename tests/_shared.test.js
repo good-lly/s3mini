@@ -22,6 +22,7 @@ export const beforeRun = (raw, name) => {
     };
     describe(`:::: ${credentials.provider} ::::`, () => {
       expect(credentials.provider).toBe(name);
+      providerName = credentials.provider;
       expect(credentials.accessKeyId).toBeDefined();
       expect(credentials.secretAccessKey).toBeDefined();
       expect(credentials.endpoint).toBeDefined();
@@ -38,7 +39,7 @@ const large_buffer = randomBytes(EIGHT_MB * 3.2);
 const byteSize = str => new Blob([str]).size;
 
 const OP_CAP = 40;
-
+let providerName;
 const key = 'first-test-object.txt';
 const contentString = 'Hello, world!';
 
@@ -135,6 +136,45 @@ export const testRunner = bucket => {
     // Check if the object is deleted
     const deletedData = await s3client.getObject(key);
     expect(deletedData).toBe(null);
+
+    if (providerName === 'cloudflare') {
+      // Test Cloudflare SSE-C
+      const ssecHeaders = {
+        'x-amz-server-side-encryption-customer-algorithm': 'AES256',
+        'x-amz-server-side-encryption-customer-key': 'n1TKiTaVHlYLMX9n0zHXyooMr026vOiTEFfT+719Hho=',
+        'x-amz-server-side-encryption-customer-key-md5': 'gepZmzgR7Be/1+K1Aw+6ow==',
+      };
+      const response = await s3client.putObject(key, contentString, undefined, ssecHeaders);
+      expect(response).toBeDefined();
+      expect(response.status).toBe(200);
+
+      const getObjectResponse = await s3client.getObject(key, {}, ssecHeaders);
+      expect(getObjectResponse).toBeDefined();
+      expect(getObjectResponse).toBe(contentString);
+
+      const wrongSsecHeaders = {
+        'x-amz-server-side-encryption-customer-algorithm': 'AES256',
+        'x-amz-server-side-encryption-customer-key': 'wrong-key',
+        'x-amz-server-side-encryption-customer-key-md5': 'wrong-md5',
+      };
+      try {
+        const wrongResponse = await s3client.getObject(key, {}, wrongSsecHeaders);
+      } catch (err) {
+        expect(err).toBeDefined();
+        expect(err.message).toContain('S3 returned 400 – Unknown');
+      }
+
+      try {
+        const wrongResponse = await s3client.getObject(key);
+      } catch (err) {
+        expect(err).toBeDefined();
+        expect(err.message).toContain('S3 returned 400 – Unknown');
+      }
+
+      // Clean up
+      const delRespSsec = await s3client.deleteObject(key);
+      expect(delRespSsec).toBe(true);
+    }
   });
 
   it('put and get object with special characters and different types', async () => {
@@ -279,6 +319,37 @@ export const testRunner = bucket => {
     expect(typeof multipartUpload).toBe('object');
     expect(multipartUpload).not.toHaveProperty('key');
     expect(multipartUpload).not.toHaveProperty('uploadId');
+
+    if (providerName === 'cloudflare') {
+      // Cloudflare SSE-C multipart upload
+      const ssecHeaders = {
+        'x-amz-server-side-encryption-customer-algorithm': 'AES256',
+        'x-amz-server-side-encryption-customer-key': 'n1TKiTaVHlYLMX9n0zHXyooMr026vOiTEFfT+719Hho=',
+        'x-amz-server-side-encryption-customer-key-md5': 'gepZmzgR7Be/1+K1Aw+6ow==',
+      };
+      const multipartKeySsec = 'multipart-object-ssec.txt';
+      const uploadIdSsec = await s3client.getMultipartUploadId(multipartKeySsec, 'text/plain', ssecHeaders);
+      const uploadPromises = [];
+      for (let i = 0; i < totalParts; i++) {
+        const partBuffer = large_buffer.subarray(i * partSize, (i + 1) * partSize);
+        uploadPromises.push(
+          s3client.uploadPart(multipartKeySsec, uploadIdSsec, partBuffer, i + 1, undefined, ssecHeaders),
+        );
+      }
+      const uploadResponses = await Promise.all(uploadPromises);
+
+      const parts = uploadResponses.map((response, index) => ({
+        partNumber: index + 1,
+        etag: response.etag,
+      }));
+
+      const completeResponse = await s3client.completeMultipartUpload(multipartKeySsec, uploadIdSsec, parts);
+      expect(completeResponse).toBeDefined();
+      expect(typeof completeResponse).toBe('object');
+      const etagSsec = completeResponse.etag;
+      expect(etagSsec).toBeDefined();
+      expect(typeof etagSsec).toBe('string');
+    }
 
     // lets test getObjectRaw with range
     const rangeStart = 2048 * 1024; // 2 MB

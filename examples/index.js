@@ -3,75 +3,56 @@
 import { S3mini, sanitizeETag } from '../dist/s3mini.js';
 import * as dotenv from 'dotenv';
 dotenv.config({ debug: false });
+const configs = process.env['BUCKET_ENV_CLOUDFLARE'].split(',');
+// const buckets = Object.keys(process.env).filter(key => key.startsWith('BUCKET_ENV_'));
 
-// get all process.env variable that starts with "BUCKET_ENV_"
-const buckets = Object.keys(process.env).filter(key => key.startsWith('BUCKET_ENV_'));
+// const s3Client = new Minio.Client({
+//   endPoint: '467f67331a1542e9bc2c9db1f870d89a.eu.r2.cloudflarestorage.com',
+//   accessKey: '36ff14b03f9da34427944a198dc03ac8',
+//   secretKey: 'f9cfba12629bb1ae3c14822708e7690834b5f7f8377fd1b2cc7a8b7201479d55',
+//   region: 'auto',
+//   useSSL: true,
+// });
 
-// create an array of objects with the following properties: provider, accessKeyId, secretAccessKey, region, endpoint
-const bucketEnv = buckets.map(bucket => {
-  const bucketVars = process.env[bucket].split(',');
-  return {
-    provider: bucketVars[0],
-    accessKeyId: bucketVars[1],
-    secretAccessKey: bucketVars[2],
-    endpoint: bucketVars[3],
-    region: bucketVars[4],
-  };
-});
+// try {
+//   const metaData = {
+//     'X-Amz-Server-Side-Encryption-Customer-Algorithm': 'AES256',
+//     'X-Amz-Server-Side-Encryption-Customer-Key': 'n1TKiTaVHlYLMX9n0zHXyooMr026vOiTEFfT+719Hho=',
+//     'X-Amz-Server-Side-Encryption-Customer-Key-MD5': 'gepZmzgR7Be/1+K1Aw+6ow==',
+//   };
 
-// list all providers
-const providers = bucketEnv.map(bucket => bucket.provider);
-console.log('Configured providers:', providers);
+//   const resp = await s3Client.putObject('s3mini-dev-sse-bucket', 'myobjectname', 'Hello, World!', metaData);
+
+//   console.log('Object uploaded successfully with SSE-C', resp);
+// } catch (error) {
+//   console.error('Error initializing Minio client:', error);
+// }
 
 (async () => {
-  const s3client = new S3mini(bucketEnv[0]);
-  console.log('s3mini instance:', bucketEnv[0], s3client);
-
-  // Head bucket - check if the bucket exists
+  const s3client = new S3mini({
+    accessKeyId: configs[1],
+    secretAccessKey: configs[2],
+    endpoint: configs[3],
+    region: configs[4],
+  });
+  console.log('s3mini instance:', s3client);
   try {
-    const bucketExists = await s3client.bucketExists();
-    console.log(`Bucket exists: ${bucketExists}`);
+    const fileContent = 'Hello, World!';
+    const key = 'myobjectname';
+    const ssecHeaders = {
+      'x-amz-server-side-encryption-customer-algorithm': 'AES256',
+      'x-amz-server-side-encryption-customer-key': 'n1TKiTaVHlYLMX9n0zHXyooMr026vOiTEFfT+719Hho=',
+      'x-amz-server-side-encryption-customer-key-md5': 'gepZmzgR7Be/1+K1Aw+6ow==',
+    };
+    const response = await s3client.putObject(key, fileContent, undefined, ssecHeaders);
+    console.log(`File uploaded successfully: ${response.status === 200}`);
 
-    if (bucketExists) {
-      const fileContent = 'Hello, World!';
-      const key = 'example.txt';
-      const response = await s3client.putObject(key, fileContent);
-      console.log(`File uploaded successfully: ${response.status === 200}`);
-
-      if (response.status === 200) {
-        const respText = await s3client.getObject(key);
-        console.log(`File content: ${respText}`);
-        if (respText !== fileContent) {
-          console.error('File content does not match expected content.');
-        } else {
-          console.log('File content matches expected content.');
-        }
-      }
-
-      for (let i = 0; i < 5; i++) {
-        const key = `example-${i}.txt`;
-        const response = await s3client.putObject(key, `Hello, World! ${i}`);
-        const etag = sanitizeETag(response.headers.get('etag'));
-        const getEtagIfMatch = await s3client.getEtag(key, { 'if-none-match': etag });
-        console.log(`ETag for ${key}: ${etag}`);
-        console.log(`ETag matches: ${getEtagIfMatch}`);
-        console.log(`File ${key} uploaded successfully: ${response.status === 200}`);
-      }
-      // const listResponse = await s3client.listObjects();
-      // const keyArray = [];
-      // console.log('Files in bucket:');
-      // listResponse.forEach(file => {
-      //   console.log(`- ${file.key}`);
-      //   keyArray.push(file.key);
-      // });
-      // const deleteResponse = await s3client.deleteObjects(keyArray);
-      // console.log(`Files deleted: ${deleteResponse}`);
-      // const listAfterDelete = await s3client.listObjects();
-      // console.log('Files after deletion:');
-      // listAfterDelete.forEach(file => {
-      //   console.log(`- ${file.key}`);
-      // });
+    const getObjectResponse = await s3client.getObject(key, {}, ssecHeaders);
+    console.log(`File content retrieved successfully: ${getObjectResponse !== null}`);
+    if (getObjectResponse) {
+      console.log('File content:', getObjectResponse);
     }
+    // }
   } catch (error) {
     console.error('Error checking bucket existence:', error);
   }

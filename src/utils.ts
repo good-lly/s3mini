@@ -1,5 +1,4 @@
 'use strict';
-
 import type { Crypto, XmlValue, XmlMap, ListBucketResponse, ErrorWithCode } from './types.js';
 declare const crypto: Crypto;
 

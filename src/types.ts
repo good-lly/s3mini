@@ -8,6 +8,12 @@ export interface S3Config {
   logger?: Logger;
 }
 
+export interface SSECHeaders {
+  'x-amz-server-side-encryption-customer-algorithm': string;
+  'x-amz-server-side-encryption-customer-key': string;
+  'x-amz-server-side-encryption-customer-key-md5': string;
+}
+
 export interface Crypto {
   createHmac: (
     algorithm: string,

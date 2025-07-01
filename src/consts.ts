@@ -15,9 +15,9 @@ export const DEFAULT_REQUEST_SIZE_IN_BYTES = 8 * 1024 * 1024;
 export const HEADER_AMZ_CONTENT_SHA256 = 'x-amz-content-sha256';
 export const HEADER_AMZ_DATE = 'x-amz-date';
 export const HEADER_HOST = 'host';
-export const HEADER_AUTHORIZATION = 'Authorization';
-export const HEADER_CONTENT_TYPE = 'Content-Type';
-export const HEADER_CONTENT_LENGTH = 'Content-Length';
+export const HEADER_AUTHORIZATION = 'authorization';
+export const HEADER_CONTENT_TYPE = 'content-type';
+export const HEADER_CONTENT_LENGTH = 'content-length';
 export const HEADER_ETAG = 'etag';
 export const HEADER_LAST_MODIFIED = 'last-modified';
 
