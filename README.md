@@ -69,6 +69,8 @@ The library supports a subset of S3 operations, focusing on essential features, 
 - ✅ uploadPart
 - ❌ CopyObject: Not implemented (tbd)
 
+Put/Get objects with SSE-C (server-side encryption with customer-provided keys) is supported, but only tested on Cloudflare R2!
+
 ## Installation
 
 ```bash
