@@ -14,8 +14,8 @@ import * as U from './utils.js';
  * const s3 = new CoreS3({
  *   accessKeyId: 'your-access-key',
  *   secretAccessKey: 'your-secret-key',
- *   endpoint: 'https://your-s3-endpoint.com',
- *   region: 'us-east-1' // by default is auto
+ *   endpoint: 'https://your-s3-endpoint.com/bucket-name',
+ *   region: 'auto' // by default is auto
  * });
  *
  * // Upload a file
