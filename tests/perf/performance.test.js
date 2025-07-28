@@ -7,6 +7,7 @@ import {
   PutObjectCommand,
 } from '@aws-sdk/client-s3';
 import * as Minio from 'minio';
+import awsLite from '@aws-lite/client';
 import { S3mini } from '../../dist/s3mini.min.js';
 import { Bench } from 'tinybench';
 import { tinybenchPrinter } from '@monstermann/tinybench-pretty-printer';
@@ -86,6 +87,33 @@ const makeMinio = () => {
   };
 };
 
+const makeAwsLite = async () => {
+  const client = await awsLite({
+    accessKeyId: ACCESS_KEY,
+    secretAccessKey: SECRET_KEY,
+    endpoint: BASE_ENDPOINT,
+    region: REGION,
+    plugins: [ import("@aws-lite/s3") ]
+  });
+  return {
+    name: "aws-lite",
+    get: k => client.S3.GetObject({
+      Bucket: BUCKET,
+      Key: k
+    }),
+    put: (k, b) => client.S3.PutObject({
+      Bucket: BUCKET,
+      Key: k,
+      Body: b
+    }),
+    list: () => client.S3.ListObjectsV2({ Bucket: BUCKET }),
+    del: k => client.S3.DeleteObject({
+      Bucket: BUCKET,
+      Key: k
+    }),
+  }
+}
+
 const makeS3mini = () => {
   const client = new S3mini({
     accessKeyId: ACCESS_KEY,
@@ -122,7 +150,7 @@ const ensureBucket = async adapter => {
 
 const runSuite = async () => {
   console.log(`Running performance tests against bucket "${BUCKET}"`);
-  const sdks = [makeAws(), makeMinio(), makeS3mini()];
+  const sdks = [makeAws(), makeMinio(), await makeAwsLite(), makeS3mini()];
 
   for (const [label, { key, buf }] of Object.entries(SIZES)) {
     const bench = new Bench({ iterations: 10, time: 0 });
