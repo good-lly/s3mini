@@ -1,6 +1,5 @@
 import { defineConfig, globalIgnores } from 'eslint/config';
 import typescriptEslint from '@typescript-eslint/eslint-plugin';
-import globals from 'globals';
 import tsParser from '@typescript-eslint/parser';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -23,7 +22,7 @@ export default defineConfig([
     '/examples',
     'tests/**',
     'eslint.config.js',
-    'jest.config*.js',
+    'jest.config.js',
     'rollup.config.js',
     'jest.config.js',
     'jest.config.perf.js',
@@ -46,11 +45,6 @@ export default defineConfig([
     },
 
     languageOptions: {
-      globals: {
-        ...globals.worker,
-        ...globals.node,
-      },
-
       parser: tsParser,
       ecmaVersion: 'latest',
       sourceType: 'module',
