@@ -527,8 +527,9 @@ class S3mini {
       }
       if (res.status !== 200) {
         const errorBody = await res.text();
-        const errorCode = res.headers.get('x-amz-error-code') || 'Unknown';
-        const errorMessage = res.headers.get('x-amz-error-message') || res.statusText;
+        const parsedErrorBody = this._parseErrorXml(res.headers, errorBody);
+        const errorCode = res.headers.get('x-amz-error-code') ?? parsedErrorBody.svcCode ?? 'Unknown';
+        const errorMessage = res.headers.get('x-amz-error-message') ?? parsedErrorBody.errorMessage ?? res.statusText;
         this._log(
           'error',
           `${C.ERROR_PREFIX}Request failed with status ${res.status}: ${errorCode} - ${errorMessage}, err body: ${errorBody}`,
@@ -1243,10 +1244,32 @@ class S3mini {
     }
   }
 
+  private _parseErrorXml(headers: Headers, body: string): { svcCode?: string; errorMessage?: string } {
+    if (headers.get('content-type') !== 'application/xml') {
+      return {};
+    }
+    const parsedBody = U.parseXml(body);
+    if (
+      !parsedBody ||
+      typeof parsedBody !== 'object' ||
+      !('Error' in parsedBody) ||
+      !parsedBody.Error ||
+      typeof parsedBody.Error !== 'object'
+    ) {
+      return {};
+    }
+    const error = parsedBody.Error;
+    return {
+      svcCode: 'Code' in error && typeof error.Code === 'string' ? error.Code : undefined,
+      errorMessage: 'Message' in error && typeof error.Message === 'string' ? error.Message : undefined,
+    };
+  }
+
   private async _handleErrorResponse(res: Response): Promise<void> {
     const errorBody = await res.text();
-    const svcCode = res.headers.get('x-amz-error-code') ?? 'Unknown';
-    const errorMessage = res.headers.get('x-amz-error-message') || res.statusText;
+    const parsedErrorBody = this._parseErrorXml(res.headers, errorBody);
+    const svcCode = res.headers.get('x-amz-error-code') ?? parsedErrorBody.svcCode ?? 'Unknown';
+    const errorMessage = res.headers.get('x-amz-error-message') ?? parsedErrorBody.errorMessage ?? res.statusText;
     this._log(
       'error',
       `${C.ERROR_PREFIX}Request failed with status ${res.status}: ${svcCode} - ${errorMessage},err body: ${errorBody}`,
