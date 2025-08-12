@@ -343,7 +343,7 @@ class S3mini {
     }: {
       query?: Record<string, unknown> | undefined;
       body?: string | Buffer | undefined;
-      headers?: Record<string, string | number | undefined> | IT.SSECHeaders | undefined;
+      headers?: Record<string, string | number | undefined> | IT.SSECHeaders | IT.AWSHeaders | undefined;
       tolerated?: number[] | undefined;
       withQuery?: boolean | undefined;
     } = {},
@@ -856,6 +856,7 @@ class S3mini {
    * @param {string | Buffer} data - The data to upload (string or Buffer).
    * @param {string} [fileType='application/octet-stream'] - The MIME type of the file.
    * @param {IT.SSECHeaders} [ssecHeaders] - Server-Side Encryption headers, if any.
+   * @param {IT.AWSHeaders} [additionalHeaders] - Additional x-amz-* headers specific to this request, if any.
    * @returns {Promise<Response>} A promise that resolves to the Response object from the upload request.
    * @throws {TypeError} If data is not a string or Buffer.
    * @example
@@ -871,6 +872,7 @@ class S3mini {
     data: string | Buffer,
     fileType: string = C.DEFAULT_STREAM_CONTENT_TYPE,
     ssecHeaders?: IT.SSECHeaders,
+    additionalHeaders?: IT.AWSHeaders,
   ): Promise<Response> {
     if (!(data instanceof Buffer || typeof data === 'string')) {
       throw new TypeError(C.ERROR_DATA_BUFFER_REQUIRED);
@@ -880,6 +882,7 @@ class S3mini {
       headers: {
         [C.HEADER_CONTENT_LENGTH]: typeof data === 'string' ? Buffer.byteLength(data) : data.length,
         [C.HEADER_CONTENT_TYPE]: fileType,
+        ...additionalHeaders,
         ...ssecHeaders,
       },
       tolerated: [200],

@@ -14,6 +14,10 @@ export interface SSECHeaders {
   'x-amz-server-side-encryption-customer-key-md5': string;
 }
 
+export interface AWSHeaders {
+  [k: `x-amz-${string}`]: string;
+}
+
 export interface Crypto {
   createHmac: (
     algorithm: string,
