@@ -3,7 +3,7 @@ import { jest, it, expect, describe } from '@jest/globals';
 import { S3mini, s3mini, sanitizeETag, runInBatches } from '../dist/s3mini.js';
 import { randomBytes } from 'node:crypto';
 
-export const beforeRun = (raw, name) => {
+export const beforeRun = (raw, name, providerSpecific) => {
   if (!raw || raw === null) {
     console.error('No credentials found. Please set the BUCKET_ENV_ environment variables.');
     describe.skip(name, () => {
@@ -28,6 +28,9 @@ export const beforeRun = (raw, name) => {
       expect(credentials.endpoint).toBeDefined();
       expect(credentials.region).toBeDefined();
       testRunner(credentials);
+      if (providerSpecific) {
+        providerSpecific(credentials);
+      }
     });
   }
 };
