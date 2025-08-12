@@ -50,17 +50,7 @@ const specialCharContentString = 'Hello, world! \uD83D\uDE00';
 const specialCharContentBufferExtra = Buffer.from(specialCharContentString + ' extra', 'utf-8');
 const specialCharKey = 'special-char key with spaces.txt';
 
-// --- 2 ■ A separate describe makes test output nicer -----------------------
-export const testRunner = bucket => {
-  jest.setTimeout(120_000);
-
-  const s3client = new S3mini({
-    accessKeyId: bucket.accessKeyId,
-    secretAccessKey: bucket.secretAccessKey,
-    endpoint: bucket.endpoint,
-    region: bucket.region,
-  });
-
+export const resetBucketBeforeAll = s3client => {
   beforeAll(async () => {
     let exists;
     try {
@@ -80,6 +70,20 @@ export const testRunner = bucket => {
       }
     }
   });
+}
+
+// --- 2 ■ A separate describe makes test output nicer -----------------------
+export const testRunner = bucket => {
+  jest.setTimeout(120_000);
+
+  const s3client = new S3mini({
+    accessKeyId: bucket.accessKeyId,
+    secretAccessKey: bucket.secretAccessKey,
+    endpoint: bucket.endpoint,
+    region: bucket.region,
+  });
+
+  resetBucketBeforeAll(s3client);
 
   it('accepts deprecated alias s3mini for backward compatibility', () => {
     expect(S3mini).toBe(s3mini);

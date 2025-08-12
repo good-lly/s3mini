@@ -2,7 +2,7 @@
 import { it, jest } from '@jest/globals';
 import { createHash } from 'node:crypto';
 import { S3mini } from '../dist/s3mini.js';
-import { beforeRun } from './_shared.test.js';
+import { beforeRun, resetBucketBeforeAll } from './_shared.test.js';
 
 import * as dotenv from 'dotenv';
 dotenv.config();
@@ -21,6 +21,8 @@ const minioSpecific = bucket => {
     endpoint: bucket.endpoint,
     region: bucket.region,
   });
+
+  resetBucketBeforeAll(s3client);
 
   it('put object with valid x-amz-checksum-sha1 header', async () => {
     const fileContents = Buffer.from('Some file contents.', 'utf-8');
