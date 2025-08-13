@@ -1,6 +1,6 @@
 {
   "name": "s3mini",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "👶 Tiny & fast S3 client for node and edge computing platforms",
   "homepage": "https://github.com/good-lly/s3mini",
   "bugs": {
@@ -76,8 +76,8 @@
     "@rollup/plugin-terser": "^0.4.4",
     "@rollup/plugin-typescript": "^12.1.4",
     "@types/node": "^24.0.8",
-    "@typescript-eslint/eslint-plugin": "^8.35.1",
-    "@typescript-eslint/parser": "^8.35.1",
+    "@typescript-eslint/eslint-plugin": "^8.39.1",
+    "@typescript-eslint/parser": "^8.39.1",
     "dotenv": "^17.0.0",
     "eslint": "^9.30.0",
     "eslint-config-prettier": "^10.1.5",
@@ -87,11 +87,11 @@
     "rimraf": "^6.0.1",
     "rollup": "^4.44.1",
     "rollup-plugin-dts": "^6.2.1",
-    "tinybench": "^4.0.1",
+    "tinybench": "^4.1.0",
     "typescript": "^5.8.3"
   },
   "overrides": {
-    "glob": "10.4.2"
+    "glob": "^10.4.2"
   },
   "prettier": {
     "bracketSpacing": true,
