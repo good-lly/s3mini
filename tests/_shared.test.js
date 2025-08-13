@@ -70,7 +70,7 @@ export const resetBucketBeforeAll = s3client => {
       }
     }
   });
-}
+};
 
 // --- 2 ■ A separate describe makes test output nicer -----------------------
 export const testRunner = bucket => {
@@ -168,14 +168,14 @@ export const testRunner = bucket => {
         const wrongResponse = await s3client.getObject(key, {}, wrongSsecHeaders);
       } catch (err) {
         expect(err).toBeDefined();
-        expect(err.message).toContain('S3 returned 400 – Unknown');
+        expect(err.message).toContain('400 – InvalidArgument');
       }
 
       try {
         const wrongResponse = await s3client.getObject(key);
       } catch (err) {
         expect(err).toBeDefined();
-        expect(err.message).toContain('S3 returned 400 – Unknown');
+        expect(err.message).toContain('400 – InvalidRequest');
       }
 
       // Clean up
