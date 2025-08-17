@@ -312,7 +312,7 @@ class S3mini {
   }
 
   private _buildStringToSign(fullDatetime: string, credentialScope: string, canonicalRequest: string): string {
-    return [C.AWS_ALGORITHM, fullDatetime, credentialScope, U.hash(canonicalRequest)].join('\n');
+    return [C.AWS_ALGORITHM, fullDatetime, credentialScope, U.sha256(canonicalRequest)].join('\n');
   }
 
   private _calculateSignature(shortDatetime: string, stringToSign: string): string {
@@ -1179,7 +1179,7 @@ class S3mini {
     const objectsXml = keys.map(key => `<Object><Key>${U.escapeXml(key)}</Key></Object>`).join('');
     const xmlBody = '<Delete>' + objectsXml + '</Delete>';
     const query = { delete: '' };
-    const sha256base64 = U.sha256base64(xmlBody);
+    const sha256base64 = U.sha256(xmlBody, 'base64');
     const headers = {
       [C.HEADER_CONTENT_TYPE]: C.XML_CONTENT_TYPE,
       [C.HEADER_CONTENT_LENGTH]: Buffer.byteLength(xmlBody).toString(),

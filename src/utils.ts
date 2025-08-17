@@ -10,14 +10,12 @@ const _createHash: Crypto['createHash'] = crypto.createHash || (await import('no
 /**
  * Hash content using SHA-256
  * @param {string|Buffer} content  – data to hash
+ * @param {BufferEncoding} [encoding='hex'] – hex | base64 | …
  * @returns {string} Hex encoded hash
- */
-export const hash = (content: string | Buffer): string => {
-  return _createHash('sha256').update(content).digest('hex') as string;
-};
 
-export const sha256base64 = (data: string | Buffer): string => {
-  return _createHash('sha256').update(data).digest('base64') as string;
+ */
+export const sha256 = (content: string | Buffer, encoding = 'hex'): string => {
+  return _createHash('sha256').update(content).digest(encoding) as string;
 };
 
 /**
