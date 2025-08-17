@@ -1179,11 +1179,11 @@ class S3mini {
     const objectsXml = keys.map(key => `<Object><Key>${U.escapeXml(key)}</Key></Object>`).join('');
     const xmlBody = '<Delete>' + objectsXml + '</Delete>';
     const query = { delete: '' };
-    const md5Base64 = U.md5base64(xmlBody);
+    const sha256base64 = U.sha256base64(xmlBody);
     const headers = {
       [C.HEADER_CONTENT_TYPE]: C.XML_CONTENT_TYPE,
       [C.HEADER_CONTENT_LENGTH]: Buffer.byteLength(xmlBody).toString(),
-      'Content-MD5': md5Base64,
+      'x-amz-checksum-sha256': sha256base64,
     };
 
     const res = await this._signedRequest('POST', '', {

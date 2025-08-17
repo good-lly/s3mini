@@ -16,8 +16,8 @@ export const hash = (content: string | Buffer): string => {
   return _createHash('sha256').update(content).digest('hex') as string;
 };
 
-export const md5base64 = (data: string | Buffer): string => {
-  return _createHash('md5').update(data).digest('base64') as string;
+export const sha256base64 = (data: string | Buffer): string => {
+  return _createHash('sha256').update(data).digest('base64') as string;
 };
 
 /**
