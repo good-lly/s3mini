@@ -1,6 +1,6 @@
 import typescript from '@rollup/plugin-typescript';
 import { nodeResolve } from '@rollup/plugin-node-resolve';
-import dts from 'rollup-plugin-dts';
+import { dts } from 'rollup-plugin-dts';
 import terser from '@rollup/plugin-terser';
 
 const terserMin = terser({
