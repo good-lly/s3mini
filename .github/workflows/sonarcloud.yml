@@ -44,6 +44,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Shallow clones should be disabled for better analysis
+
       - name: Analyze with SonarCloud
 
         # You can pin the exact commit or the version.
@@ -60,7 +65,7 @@ jobs:
             -Dsonar.organization=good-lly
             -Dsonar.scm.provider=git
             -Dsonar.sources=src
-            -Dsonar.tests=tests
+            # -Dsonar.tests=tests
             # Adds more detail to both client and server-side analysis logs, activating DEBUG mode for the scanner, and adding client-side environment variables and system properties to the server-side log of analysis report processing.
             #-Dsonar.verbose= # optional, default is false
           # When you need the analysis to take place in a directory other than the one from which it was launched, default is .
