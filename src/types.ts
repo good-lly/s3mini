@@ -76,7 +76,7 @@ export interface ListMultipartUploadSuccess {
     key: string;
     uploadId: string;
     size?: number;
-    mtime?: Date | undefined;
+    mtime?: Date;
     etag?: string;
     eTag?: string; // for backward compatibility
     parts: UploadPart[];

@@ -257,7 +257,7 @@ class S3mini {
     const shortDatetime = fullDatetime.slice(0, 8);
     const credentialScope = this._buildCredentialScope(shortDatetime);
 
-    headers[C.HEADER_AMZ_CONTENT_SHA256] = C.UNSIGNED_PAYLOAD; // body ? U.hash(body) : C.UNSIGNED_PAYLOAD;
+    headers[C.HEADER_AMZ_CONTENT_SHA256] = C.UNSIGNED_PAYLOAD;
     headers[C.HEADER_AMZ_DATE] = fullDatetime;
     headers[C.HEADER_HOST] = url.host;
     // sort headers alphabetically by key
@@ -272,7 +272,7 @@ class S3mini {
     const canonicalHeaders = this._buildCanonicalHeaders(headersForSigning);
     const signedHeaders = Object.keys(headersForSigning)
       .map(key => key.toLowerCase())
-      .sort()
+      .sort((a, b) => a.localeCompare(b))
       .join(';');
 
     const canonicalRequest = this._buildCanonicalRequest(method, url, query, canonicalHeaders, signedHeaders);
@@ -341,11 +341,11 @@ class S3mini {
       tolerated = [], // [200, 404] etc.
       withQuery = false, // append query string to signed URL
     }: {
-      query?: Record<string, unknown> | undefined;
-      body?: string | Buffer | undefined;
-      headers?: Record<string, string | number | undefined> | IT.SSECHeaders | IT.AWSHeaders | undefined;
-      tolerated?: number[] | undefined;
-      withQuery?: boolean | undefined;
+      query?: Record<string, unknown>;
+      body?: string | Buffer;
+      headers?: Record<string, string | number | undefined> | IT.SSECHeaders | IT.AWSHeaders;
+      tolerated?: number[];
+      withQuery?: boolean;
     } = {},
   ): Promise<Response> {
     // Basic validation
@@ -492,7 +492,6 @@ class S3mini {
     delimiter: string = '/',
     prefix: string = '',
     maxKeys?: number,
-    // method: IT.HttpMethod = 'GET', // 'GET' or 'HEAD'
     opts: Record<string, unknown> = {},
   ): Promise<IT.ListObject[] | null> {
     this._checkDelimiter(delimiter);
@@ -500,68 +499,129 @@ class S3mini {
     this._checkOpts(opts);
 
     const keyPath = delimiter === '/' ? delimiter : U.uriEscape(delimiter);
-
     const unlimited = !(maxKeys && maxKeys > 0);
     let remaining = unlimited ? Infinity : maxKeys;
     let token: string | undefined;
     const all: IT.ListObject[] = [];
 
     do {
-      const batchSize = Math.min(remaining, 1000); // S3 ceiling
-      const query: Record<string, unknown> = {
-        'list-type': C.LIST_TYPE, // =2 for V2
-        'max-keys': String(batchSize),
-        ...(prefix ? { prefix } : {}),
-        ...(token ? { 'continuation-token': token } : {}),
-        ...opts,
-      };
+      const batchResult = await this._fetchObjectBatch(keyPath, prefix, remaining, token, opts);
 
-      const res = await this._signedRequest('GET', keyPath, {
-        query,
-        withQuery: true,
-        tolerated: [200, 404],
-      });
+      if (batchResult === null) {
+        return null; // 404 - bucket not found
+      }
 
-      if (res.status === 404) {
-        return null;
+      all.push(...batchResult.objects);
+
+      if (!unlimited) {
+        remaining -= batchResult.objects.length;
       }
-      if (res.status !== 200) {
-        const errorBody = await res.text();
-        const parsedErrorBody = this._parseErrorXml(res.headers, errorBody);
-        const errorCode = res.headers.get('x-amz-error-code') ?? parsedErrorBody.svcCode ?? 'Unknown';
-        const errorMessage = res.headers.get('x-amz-error-message') ?? parsedErrorBody.errorMessage ?? res.statusText;
-        this._log(
-          'error',
-          `${C.ERROR_PREFIX}Request failed with status ${res.status}: ${errorCode} - ${errorMessage}, err body: ${errorBody}`,
-        );
-        throw new Error(
-          `${C.ERROR_PREFIX}Request failed with status ${res.status}: ${errorCode} - ${errorMessage}, err body: ${errorBody}`,
-        );
-      }
-      const raw = U.parseXml(await res.text()) as Record<string, unknown>;
-      if (typeof raw !== 'object' || !raw || 'error' in raw) {
-        this._log('error', `${C.ERROR_PREFIX}Unexpected listObjects response shape: ${JSON.stringify(raw)}`);
-        throw new Error(`${C.ERROR_PREFIX}Unexpected listObjects response shape`);
-      }
-      const out = (raw.ListBucketResult || raw.listBucketResult || raw) as Record<string, unknown>;
-      /* accumulate Contents */
-      const contents = out.Contents || out.contents; // S3 v2 vs v1
-      if (contents) {
-        const batch = Array.isArray(contents) ? contents : [contents];
-        all.push(...(batch as IT.ListObject[]));
-        if (!unlimited) {
-          remaining -= batch.length;
-        }
-      }
-      const truncated = out.IsTruncated === 'true' || out.isTruncated === 'true' || false;
-      token = truncated
-        ? ((out.NextContinuationToken || out.nextContinuationToken || out.NextMarker || out.nextMarker) as
-            | string
-            | undefined)
-        : undefined;
+
+      token = batchResult.continuationToken;
     } while (token && remaining > 0);
 
     return all;
+  }
+
+  private async _fetchObjectBatch(
+    keyPath: string,
+    prefix: string,
+    remaining: number,
+    token: string | undefined,
+    opts: Record<string, unknown>,
+  ): Promise<{ objects: IT.ListObject[]; continuationToken?: string } | null> {
+    const query = this._buildListObjectsQuery(prefix, remaining, token, opts);
+
+    const res = await this._signedRequest('GET', keyPath, {
+      query,
+      withQuery: true,
+      tolerated: [200, 404],
+    });
+
+    if (res.status === 404) {
+      return null;
+    }
+
+    if (res.status !== 200) {
+      await this._handleListObjectsError(res);
+    }
+
+    const xmlText = await res.text();
+    return this._parseListObjectsResponse(xmlText);
+  }
+
+  private _buildListObjectsQuery(
+    prefix: string,
+    remaining: number,
+    token: string | undefined,
+    opts: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const batchSize = Math.min(remaining, 1000); // S3 ceiling
+
+    return {
+      'list-type': C.LIST_TYPE, // =2 for V2
+      'max-keys': String(batchSize),
+      ...(prefix ? { prefix } : {}),
+      ...(token ? { 'continuation-token': token } : {}),
+      ...opts,
+    };
+  }
+
+  private async _handleListObjectsError(res: Response): Promise<never> {
+    const errorBody = await res.text();
+    const parsedErrorBody = this._parseErrorXml(res.headers, errorBody);
+    const errorCode = res.headers.get('x-amz-error-code') ?? parsedErrorBody.svcCode ?? 'Unknown';
+    const errorMessage = res.headers.get('x-amz-error-message') ?? parsedErrorBody.errorMessage ?? res.statusText;
+
+    this._log(
+      'error',
+      `${C.ERROR_PREFIX}Request failed with status ${res.status}: ${errorCode} - ${errorMessage}, err body: ${errorBody}`,
+    );
+
+    throw new Error(
+      `${C.ERROR_PREFIX}Request failed with status ${res.status}: ${errorCode} - ${errorMessage}, err body: ${errorBody}`,
+    );
+  }
+
+  private _parseListObjectsResponse(xmlText: string): {
+    objects: IT.ListObject[];
+    continuationToken?: string;
+  } {
+    const raw = U.parseXml(xmlText) as Record<string, unknown>;
+
+    if (typeof raw !== 'object' || !raw || 'error' in raw) {
+      this._log('error', `${C.ERROR_PREFIX}Unexpected listObjects response shape: ${JSON.stringify(raw)}`);
+      throw new Error(`${C.ERROR_PREFIX}Unexpected listObjects response shape`);
+    }
+
+    const out = (raw.ListBucketResult || raw.listBucketResult || raw) as Record<string, unknown>;
+    const objects = this._extractObjectsFromResponse(out);
+    const continuationToken = this._extractContinuationToken(out);
+
+    return { objects, continuationToken };
+  }
+
+  private _extractObjectsFromResponse(response: Record<string, unknown>): IT.ListObject[] {
+    const contents = response.Contents || response.contents; // S3 v2 vs v1
+
+    if (!contents) {
+      return [];
+    }
+
+    return Array.isArray(contents) ? (contents as IT.ListObject[]) : [contents as IT.ListObject];
+  }
+
+  private _extractContinuationToken(response: Record<string, unknown>): string | undefined {
+    const truncated = response.IsTruncated === 'true' || response.isTruncated === 'true' || false;
+
+    if (!truncated) {
+      return undefined;
+    }
+
+    return (response.NextContinuationToken ||
+      response.nextContinuationToken ||
+      response.NextMarker ||
+      response.nextMarker) as string | undefined;
   }
 
   /**
@@ -921,16 +981,6 @@ class S3mini {
     });
     const parsed = U.parseXml(await res.text()) as Record<string, unknown>;
 
-    // if (
-    //   parsed &&
-    //   typeof parsed === 'object' &&
-    //   'initiateMultipartUploadResult' in parsed &&
-    //   parsed.initiateMultipartUploadResult &&
-    //   'uploadId' in (parsed.initiateMultipartUploadResult as { uploadId: string })
-    // ) {
-    //   return (parsed.initiateMultipartUploadResult as { uploadId: string }).uploadId;
-    // }
-
     if (parsed && typeof parsed === 'object') {
       // Check for both cases of InitiateMultipartUploadResult
       const uploadResult =
@@ -1126,7 +1176,8 @@ class S3mini {
   }
 
   private async _deleteObjectsProcess(keys: string[]): Promise<boolean[]> {
-    const xmlBody = `<Delete>${keys.map(key => `<Object><Key>${U.escapeXml(key)}</Key></Object>`).join('')}</Delete>`;
+    const objectsXml = keys.map(key => `<Object><Key>${U.escapeXml(key)}</Key></Object>`).join('');
+    const xmlBody = '<Delete>' + objectsXml + '</Delete>';
     const query = { delete: '' };
     const md5Base64 = U.md5base64(xmlBody);
     const headers = {
@@ -1283,7 +1334,7 @@ class S3mini {
     }
     return Object.keys(queryParams)
       .map(key => `${encodeURIComponent(key)}=${encodeURIComponent(queryParams[key] as string)}`)
-      .sort()
+      .sort((a, b) => a.localeCompare(b))
       .join('&');
   }
   private _getSignatureKey(dateStamp: string): Buffer {

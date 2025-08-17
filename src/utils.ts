@@ -45,7 +45,7 @@ export const sanitizeETag = (etag: string): string => {
     '&QUOT;': '',
     '&#x00022': '',
   };
-  return etag.replace(/^("|&quot;|&#34;)|("|&quot;|&#34;)$/g, m => replaceChars[m] as string);
+  return etag.replace(/(^("|&quot;|&#34;))|(("|&quot;|&#34;)$)/g, m => replaceChars[m] as string);
 };
 
 const entityMap = {
