@@ -277,7 +277,7 @@ class S3mini {
 
     const canonicalRequest = this._buildCanonicalRequest(method, url, query, canonicalHeaders, signedHeaders);
     const stringToSign = await this._buildStringToSign(fullDatetime, credentialScope, canonicalRequest);
-    const signature = this._calculateSignature(shortDatetime, stringToSign);
+    const signature = await this._calculateSignature(shortDatetime, stringToSign);
     const authorizationHeader = this._buildAuthorizationHeader(credentialScope, signedHeaders, signature);
     headers[C.HEADER_AUTHORIZATION] = authorizationHeader;
     return { url: url.toString(), headers };
@@ -319,12 +319,12 @@ class S3mini {
     return [C.AWS_ALGORITHM, fullDatetime, credentialScope, await U.sha256(canonicalRequest)].join('\n');
   }
 
-  private _calculateSignature(shortDatetime: string, stringToSign: string): string {
+  private async _calculateSignature(shortDatetime: string, stringToSign: string): Promise<string> {
     if (shortDatetime !== this.signingKeyDate) {
       this.signingKeyDate = shortDatetime;
-      this.signingKey = this._getSignatureKey(shortDatetime);
+      this.signingKey = await this._getSignatureKey(shortDatetime);
     }
-    return U.hmac(this.signingKey!, stringToSign, 'hex') as string;
+    return (await U.hmac(this.signingKey!, stringToSign, 'hex')) as string;
   }
 
   private _buildAuthorizationHeader(credentialScope: string, signedHeaders: string, signature: string): string {
@@ -1341,11 +1341,11 @@ class S3mini {
       .sort((a, b) => a.localeCompare(b))
       .join('&');
   }
-  private _getSignatureKey(dateStamp: string): Buffer {
-    const kDate = U.hmac(`AWS4${this.secretAccessKey}`, dateStamp) as Buffer;
-    const kRegion = U.hmac(kDate, this.region) as Buffer;
-    const kService = U.hmac(kRegion, C.S3_SERVICE) as Buffer;
-    return U.hmac(kService, C.AWS_REQUEST_TYPE) as Buffer;
+  private async _getSignatureKey(dateStamp: string): Promise<Buffer> {
+    const kDate = (await U.hmac(`AWS4${this.secretAccessKey}`, dateStamp)) as Buffer;
+    const kRegion = (await U.hmac(kDate, this.region)) as Buffer;
+    const kService = (await U.hmac(kRegion, C.S3_SERVICE)) as Buffer;
+    return (await U.hmac(kService, C.AWS_REQUEST_TYPE)) as Buffer;
   }
 }
 
