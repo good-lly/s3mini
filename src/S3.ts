@@ -238,12 +238,12 @@ class S3mini {
     this._checkOpts(opts);
   }
 
-  private _sign(
+  private async _sign(
     method: IT.HttpMethod,
     keyPath: string,
     query: Record<string, unknown> = {},
     headers: Record<string, string | number> = {},
-  ): { url: string; headers: Record<string, string | number> } {
+  ): Promise<{ url: string; headers: Record<string, string | number> }> {
     // Create URL without appending keyPath first
     const url = new URL(this.endpoint);
 
@@ -276,7 +276,7 @@ class S3mini {
       .join(';');
 
     const canonicalRequest = this._buildCanonicalRequest(method, url, query, canonicalHeaders, signedHeaders);
-    const stringToSign = this._buildStringToSign(fullDatetime, credentialScope, canonicalRequest);
+    const stringToSign = await this._buildStringToSign(fullDatetime, credentialScope, canonicalRequest);
     const signature = this._calculateSignature(shortDatetime, stringToSign);
     const authorizationHeader = this._buildAuthorizationHeader(credentialScope, signedHeaders, signature);
     headers[C.HEADER_AUTHORIZATION] = authorizationHeader;
@@ -311,8 +311,12 @@ class S3mini {
     return [shortDatetime, this.region, C.S3_SERVICE, C.AWS_REQUEST_TYPE].join('/');
   }
 
-  private _buildStringToSign(fullDatetime: string, credentialScope: string, canonicalRequest: string): string {
-    return [C.AWS_ALGORITHM, fullDatetime, credentialScope, U.sha256(canonicalRequest)].join('\n');
+  private async _buildStringToSign(
+    fullDatetime: string,
+    credentialScope: string,
+    canonicalRequest: string,
+  ): Promise<string> {
+    return [C.AWS_ALGORITHM, fullDatetime, credentialScope, await U.sha256(canonicalRequest)].join('\n');
   }
 
   private _calculateSignature(shortDatetime: string, stringToSign: string): string {
@@ -364,7 +368,7 @@ class S3mini {
     };
 
     const encodedKey = key ? U.uriResourceEscape(key) : '';
-    const { url, headers: signedHeaders } = this._sign(method, encodedKey, filteredOpts, baseHeaders);
+    const { url, headers: signedHeaders } = await this._sign(method, encodedKey, filteredOpts, baseHeaders);
     if (Object.keys(query).length > 0) {
       withQuery = true; // append query string to signed URL
     }
@@ -1179,7 +1183,7 @@ class S3mini {
     const objectsXml = keys.map(key => `<Object><Key>${U.escapeXml(key)}</Key></Object>`).join('');
     const xmlBody = '<Delete>' + objectsXml + '</Delete>';
     const query = { delete: '' };
-    const sha256base64 = U.sha256(xmlBody, 'base64');
+    const sha256base64 = await U.sha256(xmlBody, 'base64');
     const headers = {
       [C.HEADER_CONTENT_TYPE]: C.XML_CONTENT_TYPE,
       [C.HEADER_CONTENT_LENGTH]: Buffer.byteLength(xmlBody).toString(),
