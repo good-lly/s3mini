@@ -20,8 +20,8 @@ export const sha256 = async (content: string | Buffer, encoding: BufferEncoding 
  * Compute HMAC-SHA-256 of arbitrary data and return a hex string.
  * @param {string|Buffer} key      – secret key
  * @param {string|Buffer} content  – data to authenticate
- * @param {BufferEncoding} [encoding='hex'] – hex | base64 | …
- * @returns {string | Buffer} hex encoded HMAC
+ * @param {('hex' | 'base64')} [encoding] – optional string encoding
+ * @returns {string | Buffer} string encoded or raw HMAC
  */
 export const hmac = async (
   key: string | Buffer,
