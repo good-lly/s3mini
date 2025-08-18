@@ -1,10 +1,5 @@
 'use strict';
-import type { Crypto, XmlValue, XmlMap, ListBucketResponse, ErrorWithCode } from './types.js';
-declare const crypto: Crypto;
-
-// Initialize crypto functions - this is needed for environments where `crypto` is not available globally
-// e.g., in Cloudflare Workers or other non-Node.js environments with nodejs_flags enabled.
-const _createHmac: Crypto['createHmac'] = crypto.createHmac || (await import('node:crypto')).createHmac;
+import type { XmlValue, XmlMap, ListBucketResponse, ErrorWithCode } from './types.js';
 
 /**
  * Hash content using SHA-256
@@ -28,9 +23,23 @@ export const sha256 = async (content: string | Buffer, encoding: BufferEncoding 
  * @param {BufferEncoding} [encoding='hex'] – hex | base64 | …
  * @returns {string | Buffer} hex encoded HMAC
  */
-export const hmac = (key: string | Buffer, content: string | Buffer, encoding?: 'hex' | 'base64'): string | Buffer => {
-  const mac = _createHmac('sha256', key).update(content);
-  return encoding ? mac.digest(encoding) : mac.digest();
+export const hmac = async (
+  key: string | Buffer,
+  content: string | Buffer,
+  encoding?: 'hex' | 'base64',
+): Promise<string | Buffer> => {
+  const encoder = new TextEncoder();
+  const secret = await globalThis.crypto.subtle.importKey(
+    'raw',
+    Buffer.from(key),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const data = encoder.encode(content.toString('utf-8'));
+  const mac = await globalThis.crypto.subtle.sign('HMAC', secret, data);
+
+  return encoding ? Buffer.from(mac).toString(encoding) : Buffer.from(mac);
 };
 
 /**

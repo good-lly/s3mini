@@ -18,16 +18,6 @@ export interface AWSHeaders {
   [k: `x-amz-${string}`]: string;
 }
 
-export interface Crypto {
-  createHmac: (
-    algorithm: string,
-    key: Buffer | string,
-  ) => {
-    update: (data: Buffer | string) => { digest: (encoding?: string) => string | Buffer };
-    digest: (encoding?: string) => string | Buffer;
-  };
-}
-
 export interface Logger {
   info: (message: string, ...args: unknown[]) => void;
   warn: (message: string, ...args: unknown[]) => void;
