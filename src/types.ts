@@ -26,10 +26,6 @@ export interface Crypto {
     update: (data: Buffer | string) => { digest: (encoding?: string) => string | Buffer };
     digest: (encoding?: string) => string | Buffer;
   };
-  createHash: (algorithm: string) => {
-    update: (data: Buffer | string) => { digest: (encoding?: string) => string | Buffer };
-    digest: (encoding?: string) => string | Buffer;
-  };
 }
 
 export interface Logger {

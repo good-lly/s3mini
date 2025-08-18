@@ -5,7 +5,6 @@ declare const crypto: Crypto;
 // Initialize crypto functions - this is needed for environments where `crypto` is not available globally
 // e.g., in Cloudflare Workers or other non-Node.js environments with nodejs_flags enabled.
 const _createHmac: Crypto['createHmac'] = crypto.createHmac || (await import('node:crypto')).createHmac;
-const _createHash: Crypto['createHash'] = crypto.createHash || (await import('node:crypto')).createHash;
 
 /**
  * Hash content using SHA-256
@@ -14,8 +13,12 @@ const _createHash: Crypto['createHash'] = crypto.createHash || (await import('no
  * @returns {string} Hex encoded hash
 
  */
-export const sha256 = (content: string | Buffer, encoding = 'hex'): string => {
-  return _createHash('sha256').update(content).digest(encoding) as string;
+export const sha256 = async (content: string | Buffer, encoding: BufferEncoding = 'hex'): Promise<string> => {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(content.toString());
+  const hash = await globalThis.crypto.subtle.digest('SHA-256', data);
+
+  return Buffer.from(hash).toString(encoding);
 };
 
 /**
