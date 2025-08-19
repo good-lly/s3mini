@@ -20,9 +20,9 @@ export const base64FromBuffer = (buffer: ArrayBuffer): string => {
 };
 
 /**
- * Compute SHA-256 hash of arbitrary string data
- * @param {string} content  – data to hash
- * @returns {ArrayBuffer} Hex encoded hash
+ * Compute SHA-256 hash of arbitrary string data.
+ * @param {string} content The content to be hashed.
+ * @returns {ArrayBuffer} The raw hash
  */
 export const sha256 = async (content: string): Promise<ArrayBuffer> => {
   const encoder = new TextEncoder();
