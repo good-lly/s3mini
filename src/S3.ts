@@ -50,7 +50,7 @@ class S3mini {
   private requestAbortTimeout?: number;
   private logger?: IT.Logger;
   private signingKeyDate?: string;
-  private signingKey?: Buffer;
+  private signingKey?: ArrayBuffer;
 
   constructor({
     accessKeyId,
@@ -326,7 +326,7 @@ class S3mini {
       this.signingKeyDate = shortDatetime;
       this.signingKey = await this._getSignatureKey(shortDatetime);
     }
-    return (await U.hmac(this.signingKey!, stringToSign, 'hex')) as string;
+    return U.hexFromBuffer(await U.hmac(this.signingKey!, stringToSign));
   }
 
   private _buildAuthorizationHeader(credentialScope: string, signedHeaders: string, signature: string): string {
@@ -1343,11 +1343,11 @@ class S3mini {
       .sort((a, b) => a.localeCompare(b))
       .join('&');
   }
-  private async _getSignatureKey(dateStamp: string): Promise<Buffer> {
-    const kDate = (await U.hmac(`AWS4${this.secretAccessKey}`, dateStamp)) as Buffer;
-    const kRegion = (await U.hmac(kDate, this.region)) as Buffer;
-    const kService = (await U.hmac(kRegion, C.S3_SERVICE)) as Buffer;
-    return (await U.hmac(kService, C.AWS_REQUEST_TYPE)) as Buffer;
+  private async _getSignatureKey(dateStamp: string): Promise<ArrayBuffer> {
+    const kDate = await U.hmac(`AWS4${this.secretAccessKey}`, dateStamp);
+    const kRegion = await U.hmac(kDate, this.region);
+    const kService = await U.hmac(kRegion, C.S3_SERVICE);
+    return await U.hmac(kService, C.AWS_REQUEST_TYPE);
   }
 }
 
