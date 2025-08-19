@@ -32,29 +32,23 @@ export const sha256 = async (content: string): Promise<ArrayBuffer> => {
 };
 
 /**
- * Compute HMAC-SHA-256 of arbitrary data and return a hex string.
- * @param {string|Buffer} key      – secret key
- * @param {string|Buffer} content  – data to authenticate
- * @param {('hex' | 'base64')} [encoding] – optional string encoding
- * @returns {string | Buffer} string encoded or raw HMAC
+ * Compute HMAC-SHA-256 of arbitrary data.
+ * @param {string|ArrayBuffer} key The key used to sign the content.
+ * @param {string} content The content to be signed.
+ * @returns {ArrayBuffer} The raw signature
  */
-export const hmac = async (
-  key: string | Buffer,
-  content: string | Buffer,
-  encoding?: 'hex' | 'base64',
-): Promise<string | Buffer> => {
+export const hmac = async (key: string | ArrayBuffer, content: string): Promise<ArrayBuffer> => {
   const encoder = new TextEncoder();
   const secret = await globalThis.crypto.subtle.importKey(
     'raw',
-    Buffer.from(key),
+    typeof key === 'string' ? encoder.encode(key) : key,
     { name: 'HMAC', hash: 'SHA-256' },
     false,
     ['sign'],
   );
-  const data = encoder.encode(content.toString('utf-8'));
-  const mac = await globalThis.crypto.subtle.sign('HMAC', secret, data);
+  const data = encoder.encode(content);
 
-  return encoding ? Buffer.from(mac).toString(encoding) : Buffer.from(mac);
+  return await globalThis.crypto.subtle.sign('HMAC', secret, data);
 };
 
 /**
