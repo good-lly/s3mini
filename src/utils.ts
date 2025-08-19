@@ -2,6 +2,24 @@
 import type { XmlValue, XmlMap, ListBucketResponse, ErrorWithCode } from './types.js';
 
 /**
+ * Turn a raw ArrayBuffer into its hexadecimal representation.
+ * @param {ArrayBuffer} buffer The raw bytes.
+ * @returns {string} Hexadecimal string
+ */
+export const hexFromBuffer = (buffer: ArrayBuffer): string => {
+  return Array.from(new Uint8Array(buffer), byte => byte.toString(16).padStart(2, '0')).join('');
+};
+
+/**
+ * Turn a raw ArrayBuffer into its base64 representation.
+ * @param {ArrayBuffer} buffer The raw bytes.
+ * @returns {string} Base64 string
+ */
+export const base64FromBuffer = (buffer: ArrayBuffer): string => {
+  return btoa(Array.from(new Uint8Array(buffer), byte => String.fromCharCode(byte)).join(''));
+};
+
+/**
  * Hash content using SHA-256
  * @param {string|Buffer} content  – data to hash
  * @param {BufferEncoding} [encoding='hex'] – hex | base64 | …
