@@ -20,18 +20,15 @@ export const base64FromBuffer = (buffer: ArrayBuffer): string => {
 };
 
 /**
- * Hash content using SHA-256
- * @param {string|Buffer} content  – data to hash
- * @param {BufferEncoding} [encoding='hex'] – hex | base64 | …
- * @returns {string} Hex encoded hash
-
+ * Compute SHA-256 hash of arbitrary string data
+ * @param {string} content  – data to hash
+ * @returns {ArrayBuffer} Hex encoded hash
  */
-export const sha256 = async (content: string | Buffer, encoding: BufferEncoding = 'hex'): Promise<string> => {
+export const sha256 = async (content: string): Promise<ArrayBuffer> => {
   const encoder = new TextEncoder();
-  const data = encoder.encode(content.toString());
-  const hash = await globalThis.crypto.subtle.digest('SHA-256', data);
+  const data = encoder.encode(content);
 
-  return Buffer.from(hash).toString(encoding);
+  return await globalThis.crypto.subtle.digest('SHA-256', data);
 };
 
 /**
