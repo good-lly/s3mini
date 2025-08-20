@@ -71,13 +71,13 @@
     "@aws-sdk/client-s3": "^3.864.0",
     "@eslint/eslintrc": "^3.3.1",
     "@eslint/js": "^9.30.0",
-    "@monstermann/tinybench-pretty-printer": "^0.1.0",
     "@rollup/plugin-node-resolve": "^16.0.1",
     "@rollup/plugin-terser": "^0.4.4",
     "@rollup/plugin-typescript": "^12.1.4",
-    "@types/node": "^24.0.8",
-    "@typescript-eslint/eslint-plugin": "^8.39.1",
-    "@typescript-eslint/parser": "^8.39.1",
+    "@types/node": "^24.3.0",
+    "@typescript-eslint/eslint-plugin": "^8.40.0",
+    "@typescript-eslint/parser": "^8.40.0",
+    "console-table-printer": "^2.14.6",
     "dotenv": "^17.0.0",
     "eslint": "^9.30.0",
     "eslint-config-prettier": "^10.1.5",
@@ -85,13 +85,13 @@
     "minio": "^8.0.5",
     "prettier": "^3.6.2",
     "rimraf": "^6.0.1",
-    "rollup": "^4.44.1",
-    "rollup-plugin-dts": "^6.2.1",
-    "tinybench": "^4.1.0",
+    "rollup": "^4.46.1",
+    "rollup-plugin-dts": "^6.2.3",
+    "tinybench": "^5.0.0",
     "typescript": "^5.8.3"
   },
   "overrides": {
-    "glob": "^10.4.2"
+    "glob": "^11.0.3"
   },
   "prettier": {
     "bracketSpacing": true,
