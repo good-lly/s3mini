@@ -1,12 +1,13 @@
 'use strict';
 import type { XmlValue, XmlMap, ListBucketResponse, ErrorWithCode } from './types.js';
-const tencoder = new TextEncoder();
+
+const ENCODR = new TextEncoder();
 const chunkSize = 0x8000; // 32KB chunks
-const HEX_CHARS = '0123456789abcdef';
+const HEXS = '0123456789abcdef';
 
 export const getByteSize = (data: unknown): number => {
   if (typeof data === 'string') {
-    return tencoder.encode(data).byteLength;
+    return ENCODR.encode(data).byteLength;
   }
   if (data instanceof ArrayBuffer || data instanceof Uint8Array) {
     return data.byteLength;
@@ -26,7 +27,7 @@ export const hexFromBuffer = (buffer: ArrayBuffer): string => {
   const bytes = new Uint8Array(buffer);
   let hex = '';
   for (const byte of bytes) {
-    hex += HEX_CHARS[byte >> 4]! + HEX_CHARS[byte & 0x0f]!;
+    hex += HEXS[byte >> 4]! + HEXS[byte & 0x0f]!;
   }
   return hex;
 };
@@ -52,7 +53,7 @@ export const base64FromBuffer = (buffer: ArrayBuffer): string => {
  * @returns {ArrayBuffer} The raw hash
  */
 export const sha256 = async (content: string): Promise<ArrayBuffer> => {
-  const data = tencoder.encode(content);
+  const data = ENCODR.encode(content);
 
   return await globalThis.crypto.subtle.digest('SHA-256', data);
 };
@@ -66,12 +67,12 @@ export const sha256 = async (content: string): Promise<ArrayBuffer> => {
 export const hmac = async (key: string | ArrayBuffer, content: string): Promise<ArrayBuffer> => {
   const secret = await globalThis.crypto.subtle.importKey(
     'raw',
-    typeof key === 'string' ? tencoder.encode(key) : key,
+    typeof key === 'string' ? ENCODR.encode(key) : key,
     { name: 'HMAC', hash: 'SHA-256' },
     false,
     ['sign'],
   );
-  const data = tencoder.encode(content);
+  const data = ENCODR.encode(content);
 
   return await globalThis.crypto.subtle.sign('HMAC', secret, data);
 };

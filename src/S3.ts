@@ -253,96 +253,45 @@ class S3mini {
         url.pathname === '/' ? `/${keyPath.replace(/^\/+/, '')}` : `${url.pathname}/${keyPath.replace(/^\/+/, '')}`;
     }
 
-    const fullDatetime = new Date().toISOString().replace(/[:-]|\.\d{3}/g, '');
-    const shortDatetime = fullDatetime.slice(0, 8);
-    const credentialScope = this._buildCredentialScope(shortDatetime);
+    const d = new Date();
+    const year = d.getUTCFullYear();
+    const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(d.getUTCDate()).padStart(2, '0');
+
+    const shortDatetime = `${year}${month}${day}`;
+    const fullDatetime = `${shortDatetime}T${String(d.getUTCHours()).padStart(2, '0')}${String(d.getUTCMinutes()).padStart(2, '0')}${String(d.getUTCSeconds()).padStart(2, '0')}Z`;
+    const credentialScope = `${shortDatetime}/${this.region}/${C.S3_SERVICE}/${C.AWS_REQUEST_TYPE}`;
 
     headers[C.HEADER_AMZ_CONTENT_SHA256] = C.UNSIGNED_PAYLOAD;
     headers[C.HEADER_AMZ_DATE] = fullDatetime;
     headers[C.HEADER_HOST] = url.host;
-    // sort headers alphabetically by key
 
     const ignoredHeaders = new Set(['authorization', 'content-length', 'content-type', 'user-agent']);
-    const headerEntries: Array<[string, string | number]> = [];
-    const lowerKeys: string[] = [];
+
+    let canonicalHeaders = '';
+    let signedHeaders = '';
 
     for (const [key, value] of Object.entries(headers).sort(([a], [b]) => a.localeCompare(b))) {
       const lowerKey = key.toLowerCase();
       if (!ignoredHeaders.has(lowerKey)) {
-        headerEntries.push([key, value]);
-        lowerKeys.push(lowerKey);
+        if (canonicalHeaders) {
+          canonicalHeaders += '\n';
+          signedHeaders += ';';
+        }
+        canonicalHeaders += `${lowerKey}:${String(value).trim()}`;
+        signedHeaders += lowerKey;
       }
     }
-
-    let canonicalHeaders = '';
-    for (const [key, value] of headerEntries) {
-      if (canonicalHeaders) {
-        canonicalHeaders += '\n';
-      }
-      canonicalHeaders += `${key.toLowerCase()}:${String(value).trim()}`;
-    }
-
-    const signedHeaders = lowerKeys.join(';');
-    const canonicalRequest = this._buildCanonicalRequest(method, url, query, canonicalHeaders, signedHeaders);
-    const stringToSign = await this._buildStringToSign(fullDatetime, credentialScope, canonicalRequest);
-    const signature = await this._calculateSignature(shortDatetime, stringToSign);
-    const authorizationHeader = this._buildAuthorizationHeader(credentialScope, signedHeaders, signature);
-    headers[C.HEADER_AUTHORIZATION] = authorizationHeader;
-    return { url: url.toString(), headers };
-  }
-
-  // private _buildCanonicalHeaders(headers: Record<string, string | number>): string {
-  //   return Object.entries(headers)
-  //     .map(([key, value]) => `${key.toLowerCase()}:${String(value).trim()}`)
-  //     .join('\n');
-  // }
-
-  private _buildCanonicalRequest(
-    method: IT.HttpMethod,
-    url: URL,
-    query: Record<string, unknown>,
-    canonicalHeaders: string,
-    signedHeaders: string,
-  ): string {
-    const parts = [
-      method,
-      url.pathname,
-      this._buildCanonicalQueryString(query),
-      canonicalHeaders + '\n', // Canonical headers end with extra newline
-      signedHeaders,
-      C.UNSIGNED_PAYLOAD,
-    ];
-    return parts.join('\n');
-  }
-
-  private _buildCredentialScope(shortDatetime: string): string {
-    return [shortDatetime, this.region, C.S3_SERVICE, C.AWS_REQUEST_TYPE].join('/');
-  }
-
-  private async _buildStringToSign(
-    fullDatetime: string,
-    credentialScope: string,
-    canonicalRequest: string,
-  ): Promise<string> {
-    return [C.AWS_ALGORITHM, fullDatetime, credentialScope, U.hexFromBuffer(await U.sha256(canonicalRequest))].join(
-      '\n',
-    );
-  }
-
-  private async _calculateSignature(shortDatetime: string, stringToSign: string): Promise<string> {
+    const canonicalRequest = `${method}\n${url.pathname}\n${this._buildCanonicalQueryString(query)}\n${canonicalHeaders}\n\n${signedHeaders}\n${C.UNSIGNED_PAYLOAD}`;
+    const stringToSign = `${C.AWS_ALGORITHM}\n${fullDatetime}\n${credentialScope}\n${U.hexFromBuffer(await U.sha256(canonicalRequest))}`;
     if (shortDatetime !== this.signingKeyDate) {
       this.signingKeyDate = shortDatetime;
       this.signingKey = await this._getSignatureKey(shortDatetime);
     }
-    return U.hexFromBuffer(await U.hmac(this.signingKey!, stringToSign));
-  }
-
-  private _buildAuthorizationHeader(credentialScope: string, signedHeaders: string, signature: string): string {
-    return [
-      `${C.AWS_ALGORITHM} Credential=${this.accessKeyId}/${credentialScope}`,
-      `SignedHeaders=${signedHeaders}`,
-      `Signature=${signature}`,
-    ].join(', ');
+    const signature = U.hexFromBuffer(await U.hmac(this.signingKey!, stringToSign));
+    headers[C.HEADER_AUTHORIZATION] =
+      `${C.AWS_ALGORITHM} Credential=${this.accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+    return { url: url.toString(), headers };
   }
 
   private async _signedRequest(
@@ -363,9 +312,9 @@ class S3mini {
     } = {},
   ): Promise<Response> {
     // Basic validation
-    if (!['GET', 'HEAD', 'PUT', 'POST', 'DELETE'].includes(method)) {
-      throw new Error(`${C.ERROR_PREFIX}Unsupported HTTP method ${method as string}`);
-    }
+    // if (!['GET', 'HEAD', 'PUT', 'POST', 'DELETE'].includes(method)) {
+    //   throw new Error(`${C.ERROR_PREFIX}Unsupported HTTP method ${method as string}`);
+    // }
 
     const { filteredOpts, conditionalHeaders } = ['GET', 'HEAD'].includes(method)
       ? this._filterIfHeaders(query)
@@ -900,9 +849,9 @@ class S3mini {
     ssecHeaders?: IT.SSECHeaders,
     additionalHeaders?: IT.AWSHeaders,
   ): Promise<Response> {
-    if (!(data instanceof Buffer || typeof data === 'string')) {
-      throw new TypeError(C.ERROR_DATA_BUFFER_REQUIRED);
-    }
+    // if (!(data instanceof Buffer || typeof data === 'string')) {
+    //   throw new TypeError(C.ERROR_DATA_BUFFER_REQUIRED);
+    // }
     return this._signedRequest('PUT', key, {
       body: data,
       headers: {
@@ -1057,7 +1006,7 @@ class S3mini {
         if (etag && typeof etag === 'string') {
           return {
             ...resultObj,
-            etag: this.sanitizeETag(etag),
+            etag: U.sanitizeETag(etag),
           } as IT.CompleteMultipartUploadResult;
         }
 
@@ -1239,9 +1188,10 @@ class S3mini {
         signal: this.requestAbortTimeout !== undefined ? AbortSignal.timeout(this.requestAbortTimeout) : undefined,
       });
       this._log('info', `Response status: ${res.status}, tolerated: ${toleratedStatusCodes.join(',')}`);
-      if (!res.ok && !toleratedStatusCodes.includes(res.status)) {
-        await this._handleErrorResponse(res);
+      if (res.ok || toleratedStatusCodes.includes(res.status)) {
+        return res;
       }
+      await this._handleErrorResponse(res);
       return res;
     } catch (err: unknown) {
       const code = U.extractErrCode(err);
