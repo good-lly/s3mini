@@ -9,6 +9,7 @@ import {
 import * as Minio from 'minio';
 import awsLite from '@aws-lite/client';
 import { S3mini } from '../../dist/s3mini.min.js';
+// import { S3mini as S3miniOld } from 's3mini';
 import { Bench } from 'tinybench';
 import { printTable } from 'console-table-printer';
 import { randomBytes, randomUUID } from 'node:crypto';
@@ -33,10 +34,10 @@ const BUCKET_NAME = ENDPOINT.split('/')[3];
 const BUCKET = BUCKET_NAME || 'core-s3-dev-local';
 
 const SIZES = {
-  small: { key: 'bench-1MiB' + now, buf: randomBytes(1 * 1024 * 1024) },
-  medium: { key: 'bench-8MiB' + now, buf: randomBytes(8 * 1024 * 1024) },
-  large: { key: 'bench-100MiB' + now, buf: randomBytes(100 * 1024 * 1024) },
+  small: { key: 'bench-1MiB' + now.getTime(), buf: randomBytes(1 * 1024 * 1024) },
+  medium: { key: 'bench-8MiB' + now.getTime(), buf: randomBytes(8 * 1024 * 1024) },
 };
+// large: { key: 'bench-100MiB' + now, buf: randomBytes(100 * 1024 * 1024) },
 
 const collectStreamHelper = async source => {
   const readable = typeof source === 'function' ? source() : source;
@@ -132,6 +133,23 @@ const makeS3mini = () => {
     del: k => client.deleteObject(k),
   };
 };
+
+// const makeS3miniOld = () => {
+//   const client = new S3miniOld({
+//     accessKeyId: ACCESS_KEY,
+//     secretAccessKey: SECRET_KEY,
+//     endpoint: ENDPOINT,
+//     region: 'auto',
+//   });
+//   return {
+//     name: 's3mini old',
+//     get: k => client.getObject(k),
+//     put: (k, b) => client.putObject(k, b),
+//     list: () => client.listObjects('/'),
+//     del: k => client.deleteObject(k),
+//   };
+// };
+
 const s3minichecker = new S3mini({
   accessKeyId: ACCESS_KEY,
   secretAccessKey: SECRET_KEY,
@@ -153,10 +171,10 @@ const ensureBucket = async adapter => {
 
 const runSuite = async () => {
   console.log(`Running performance tests against bucket "${BUCKET}"`);
-  const sdks = [makeAws(), makeMinio(), makeS3mini()];
+  const sdks = [makeAws(), makeS3mini(), makeMinio(), await makeAwsLite() /* makeS3miniOld() */];
 
   for (const [label, { key, buf }] of Object.entries(SIZES)) {
-    const bench = new Bench({ iterations: 10, time: 0 });
+    const bench = new Bench({ iterations: 100, time: 0 });
     for (const sdk of sdks) {
       await ensureBucket(sdk);
       bench.add(`${sdk.name}`, async task => {

@@ -68,7 +68,7 @@
   "devDependencies": {
     "@aws-lite/client": "^0.23.2",
     "@aws-lite/s3": "^0.2.6",
-    "@aws-sdk/client-s3": "^3.864.0",
+    "@aws-sdk/client-s3": "^3.872.0",
     "@eslint/eslintrc": "^3.3.1",
     "@eslint/js": "^9.30.0",
     "@rollup/plugin-node-resolve": "^16.0.1",
@@ -87,6 +87,7 @@
     "rimraf": "^6.0.1",
     "rollup": "^4.46.1",
     "rollup-plugin-dts": "^6.2.3",
+    "s3mini": "^0.4.0",
     "tinybench": "^5.0.0",
     "typescript": "^5.8.3"
   },
