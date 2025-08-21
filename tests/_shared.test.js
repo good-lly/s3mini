@@ -1,6 +1,6 @@
 'use strict';
 import { jest, it, expect, describe } from '@jest/globals';
-import { S3mini, s3mini, sanitizeETag, runInBatches } from '../dist/s3mini.js';
+import { S3mini, sanitizeETag, runInBatches } from '../dist/s3mini.js';
 import { randomBytes } from 'node:crypto';
 
 export const beforeRun = (raw, name, providerSpecific) => {
@@ -57,7 +57,7 @@ export const resetBucketBeforeAll = s3client => {
       exists = await s3client.bucketExists();
     } catch (err) {
       // Backblaze accounts are locked to a region and may throw on HEAD
-      console.warn(`Skipping bucketExists() pre-check: ${err.message}`);
+      console.warn(`Skipping bucketExists() pre-check: ${err}`);
       return;
     }
     if (exists) {
@@ -84,11 +84,6 @@ export const testRunner = bucket => {
   });
 
   resetBucketBeforeAll(s3client);
-
-  it('accepts deprecated alias s3mini for backward compatibility', () => {
-    expect(S3mini).toBe(s3mini);
-    expect(s3client).toBeInstanceOf(s3mini);
-  });
 
   it('instantiates s3client', () => {
     expect(s3client).toBeInstanceOf(S3mini); // ← updated expectation

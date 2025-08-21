@@ -42,13 +42,13 @@ class S3mini {
    * @param {Object} [config.logger=null] - A logger object with methods like info, warn, error.
    * @throws {TypeError} Will throw an error if required parameters are missing or of incorrect type.
    */
-  private accessKeyId: string;
-  private secretAccessKey: string;
-  private endpoint: string;
-  private region: string;
-  private requestSizeInBytes: number;
-  private requestAbortTimeout?: number;
-  private logger?: IT.Logger;
+  readonly accessKeyId: string;
+  readonly secretAccessKey: string;
+  readonly endpoint: string;
+  readonly region: string;
+  readonly requestSizeInBytes: number;
+  readonly requestAbortTimeout?: number;
+  readonly logger?: IT.Logger;
   private signingKeyDate?: string;
   private signingKey?: ArrayBuffer;
 
@@ -1302,10 +1302,5 @@ class S3mini {
   }
 }
 
-/**
- * @deprecated Use `S3mini` instead.
- */
-const s3mini = S3mini;
-
-export { S3mini, s3mini };
+export { S3mini };
 export default S3mini;
