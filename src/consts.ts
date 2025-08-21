@@ -13,6 +13,7 @@ export const DEFAULT_REQUEST_SIZE_IN_BYTES = 8 * 1024 * 1024;
 
 // Headers
 export const HEADER_AMZ_CONTENT_SHA256 = 'x-amz-content-sha256';
+export const HEADER_AMZ_CHECKSUM_SHA256 = 'x-amz-checksum-sha256';
 export const HEADER_AMZ_DATE = 'x-amz-date';
 export const HEADER_HOST = 'host';
 export const HEADER_AUTHORIZATION = 'authorization';

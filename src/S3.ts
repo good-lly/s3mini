@@ -261,20 +261,28 @@ class S3mini {
     headers[C.HEADER_AMZ_DATE] = fullDatetime;
     headers[C.HEADER_HOST] = url.host;
     // sort headers alphabetically by key
-    const ignoredHeaders = ['authorization', 'content-length', 'content-type', 'user-agent'];
-    let headersForSigning = Object.fromEntries(
-      Object.entries(headers).filter(([key]) => !ignoredHeaders.includes(key.toLowerCase())),
-    );
 
-    headersForSigning = Object.fromEntries(
-      Object.entries(headersForSigning).sort(([keyA], [keyB]) => keyA.localeCompare(keyB)),
-    );
-    const canonicalHeaders = this._buildCanonicalHeaders(headersForSigning);
-    const signedHeaders = Object.keys(headersForSigning)
-      .map(key => key.toLowerCase())
-      .sort((a, b) => a.localeCompare(b))
-      .join(';');
+    const ignoredHeaders = new Set(['authorization', 'content-length', 'content-type', 'user-agent']);
+    const headerEntries: Array<[string, string | number]> = [];
+    const lowerKeys: string[] = [];
 
+    for (const [key, value] of Object.entries(headers).sort(([a], [b]) => a.localeCompare(b))) {
+      const lowerKey = key.toLowerCase();
+      if (!ignoredHeaders.has(lowerKey)) {
+        headerEntries.push([key, value]);
+        lowerKeys.push(lowerKey);
+      }
+    }
+
+    let canonicalHeaders = '';
+    for (const [key, value] of headerEntries) {
+      if (canonicalHeaders) {
+        canonicalHeaders += '\n';
+      }
+      canonicalHeaders += `${key.toLowerCase()}:${String(value).trim()}`;
+    }
+
+    const signedHeaders = lowerKeys.join(';');
     const canonicalRequest = this._buildCanonicalRequest(method, url, query, canonicalHeaders, signedHeaders);
     const stringToSign = await this._buildStringToSign(fullDatetime, credentialScope, canonicalRequest);
     const signature = await this._calculateSignature(shortDatetime, stringToSign);
@@ -283,11 +291,11 @@ class S3mini {
     return { url: url.toString(), headers };
   }
 
-  private _buildCanonicalHeaders(headers: Record<string, string | number>): string {
-    return Object.entries(headers)
-      .map(([key, value]) => `${key.toLowerCase()}:${String(value).trim()}`)
-      .join('\n');
-  }
+  // private _buildCanonicalHeaders(headers: Record<string, string | number>): string {
+  //   return Object.entries(headers)
+  //     .map(([key, value]) => `${key.toLowerCase()}:${String(value).trim()}`)
+  //     .join('\n');
+  // }
 
   private _buildCanonicalRequest(
     method: IT.HttpMethod,
@@ -386,55 +394,6 @@ class S3mini {
   }
 
   /**
-   * Gets the current configuration properties of the S3 instance.
-   * @returns {IT.S3Config} The current S3 configuration object containing all settings.
-   * @example
-   * const config = s3.getProps();
-   * console.log(config.endpoint); // 'https://s3.amazonaws.com/my-bucket'
-   */
-  public getProps(): IT.S3Config {
-    return {
-      accessKeyId: this.accessKeyId,
-      secretAccessKey: this.secretAccessKey,
-      endpoint: this.endpoint,
-      region: this.region,
-      requestSizeInBytes: this.requestSizeInBytes,
-      requestAbortTimeout: this.requestAbortTimeout,
-      logger: this.logger,
-    };
-  }
-
-  /**
-   * Updates the configuration properties of the S3 instance.
-   * @param {IT.S3Config} props - The new configuration object.
-   * @param {string} props.accessKeyId - The access key ID for authentication.
-   * @param {string} props.secretAccessKey - The secret access key for authentication.
-   * @param {string} props.endpoint - The endpoint URL of the S3-compatible service.
-   * @param {string} [props.region='auto'] - The region of the S3 service.
-   * @param {number} [props.requestSizeInBytes=8388608] - The request size of a single request in bytes.
-   * @param {number} [props.requestAbortTimeout] - The timeout in milliseconds after which a request should be aborted.
-   * @param {IT.Logger} [props.logger] - A logger object with methods like info, warn, error.
-   * @throws {TypeError} Will throw an error if required parameters are missing or of incorrect type.
-   * @example
-   * s3.setProps({
-   *   accessKeyId: 'new-access-key',
-   *   secretAccessKey: 'new-secret-key',
-   *   endpoint: 'https://new-endpoint.com/my-bucket',
-   *   region: 'us-west-2' // by default is auto
-   * });
-   */
-  public setProps(props: IT.S3Config): void {
-    this._validateConstructorParams(props.accessKeyId, props.secretAccessKey, props.endpoint);
-    this.accessKeyId = props.accessKeyId;
-    this.secretAccessKey = props.secretAccessKey;
-    this.region = props.region || 'auto';
-    this.endpoint = props.endpoint;
-    this.requestSizeInBytes = props.requestSizeInBytes || C.DEFAULT_REQUEST_SIZE_IN_BYTES;
-    this.requestAbortTimeout = props.requestAbortTimeout;
-    this.logger = props.logger;
-  }
-
-  /**
    * Sanitizes an ETag value by removing surrounding quotes and whitespace.
    * Still returns RFC compliant ETag. https://www.rfc-editor.org/rfc/rfc9110#section-8.8.3
    * @param {string} etag - The ETag value to sanitize.
@@ -459,7 +418,7 @@ class S3mini {
     `;
     const headers = {
       [C.HEADER_CONTENT_TYPE]: C.XML_CONTENT_TYPE,
-      [C.HEADER_CONTENT_LENGTH]: Buffer.byteLength(xmlBody).toString(),
+      [C.HEADER_CONTENT_LENGTH]: U.getByteSize(xmlBody),
     };
     const res = await this._signedRequest('PUT', '', {
       body: xmlBody,
@@ -947,7 +906,7 @@ class S3mini {
     return this._signedRequest('PUT', key, {
       body: data,
       headers: {
-        [C.HEADER_CONTENT_LENGTH]: typeof data === 'string' ? Buffer.byteLength(data) : data.length,
+        [C.HEADER_CONTENT_LENGTH]: U.getByteSize(data),
         [C.HEADER_CONTENT_TYPE]: fileType,
         ...additionalHeaders,
         ...ssecHeaders,
@@ -1040,7 +999,7 @@ class S3mini {
       query,
       body: data,
       headers: {
-        [C.HEADER_CONTENT_LENGTH]: typeof data === 'string' ? Buffer.byteLength(data) : data.length,
+        [C.HEADER_CONTENT_LENGTH]: U.getByteSize(data),
         ...ssecHeaders,
       },
     });
@@ -1075,7 +1034,7 @@ class S3mini {
     const xmlBody = this._buildCompleteMultipartUploadXml(parts);
     const headers = {
       [C.HEADER_CONTENT_TYPE]: C.XML_CONTENT_TYPE,
-      [C.HEADER_CONTENT_LENGTH]: Buffer.byteLength(xmlBody).toString(),
+      [C.HEADER_CONTENT_LENGTH]: U.getByteSize(xmlBody),
     };
 
     const res = await this._signedRequest('POST', key, {
@@ -1154,20 +1113,12 @@ class S3mini {
   }
 
   private _buildCompleteMultipartUploadXml(parts: Array<IT.UploadPart>): string {
-    return `
-      <CompleteMultipartUpload>
-        ${parts
-          .map(
-            part => `
-          <Part>
-            <PartNumber>${part.partNumber}</PartNumber>
-            <ETag>${part.etag}</ETag>
-          </Part>
-        `,
-          )
-          .join('')}
-      </CompleteMultipartUpload>
-    `;
+    let xml = '<CompleteMultipartUpload>';
+    for (const part of parts) {
+      xml += `<Part><PartNumber>${part.partNumber}</PartNumber><ETag>${part.etag}</ETag></Part>`;
+    }
+    xml += '</CompleteMultipartUpload>';
+    return xml;
   }
 
   /**
@@ -1188,8 +1139,8 @@ class S3mini {
     const sha256base64 = U.base64FromBuffer(await U.sha256(xmlBody));
     const headers = {
       [C.HEADER_CONTENT_TYPE]: C.XML_CONTENT_TYPE,
-      [C.HEADER_CONTENT_LENGTH]: Buffer.byteLength(xmlBody).toString(),
-      'x-amz-checksum-sha256': sha256base64,
+      [C.HEADER_CONTENT_LENGTH]: U.getByteSize(xmlBody),
+      [C.HEADER_AMZ_CHECKSUM_SHA256]: sha256base64,
     };
 
     const res = await this._signedRequest('POST', '', {

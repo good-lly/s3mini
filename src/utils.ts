@@ -1,5 +1,21 @@
 'use strict';
 import type { XmlValue, XmlMap, ListBucketResponse, ErrorWithCode } from './types.js';
+const tencoder = new TextEncoder();
+const chunkSize = 0x8000; // 32KB chunks
+const HEX_CHARS = '0123456789abcdef';
+
+export const getByteSize = (data: unknown): number => {
+  if (typeof data === 'string') {
+    return tencoder.encode(data).byteLength;
+  }
+  if (data instanceof ArrayBuffer || data instanceof Uint8Array) {
+    return data.byteLength;
+  }
+  if (data instanceof Blob) {
+    return data.size;
+  }
+  throw new Error('Unsupported data type');
+};
 
 /**
  * Turn a raw ArrayBuffer into its hexadecimal representation.
@@ -7,7 +23,12 @@ import type { XmlValue, XmlMap, ListBucketResponse, ErrorWithCode } from './type
  * @returns {string} Hexadecimal string
  */
 export const hexFromBuffer = (buffer: ArrayBuffer): string => {
-  return Array.from(new Uint8Array(buffer), byte => byte.toString(16).padStart(2, '0')).join('');
+  const bytes = new Uint8Array(buffer);
+  let hex = '';
+  for (const byte of bytes) {
+    hex += HEX_CHARS[byte >> 4]! + HEX_CHARS[byte & 0x0f]!;
+  }
+  return hex;
 };
 
 /**
@@ -16,7 +37,13 @@ export const hexFromBuffer = (buffer: ArrayBuffer): string => {
  * @returns {string} Base64 string
  */
 export const base64FromBuffer = (buffer: ArrayBuffer): string => {
-  return btoa(Array.from(new Uint8Array(buffer), byte => String.fromCharCode(byte)).join(''));
+  const bytes = new Uint8Array(buffer);
+  let result = '';
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    result += btoa(String.fromCharCode.apply(null, chunk as unknown as number[]));
+  }
+  return result;
 };
 
 /**
@@ -25,8 +52,7 @@ export const base64FromBuffer = (buffer: ArrayBuffer): string => {
  * @returns {ArrayBuffer} The raw hash
  */
 export const sha256 = async (content: string): Promise<ArrayBuffer> => {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(content);
+  const data = tencoder.encode(content);
 
   return await globalThis.crypto.subtle.digest('SHA-256', data);
 };
@@ -38,15 +64,14 @@ export const sha256 = async (content: string): Promise<ArrayBuffer> => {
  * @returns {ArrayBuffer} The raw signature
  */
 export const hmac = async (key: string | ArrayBuffer, content: string): Promise<ArrayBuffer> => {
-  const encoder = new TextEncoder();
   const secret = await globalThis.crypto.subtle.importKey(
     'raw',
-    typeof key === 'string' ? encoder.encode(key) : key,
+    typeof key === 'string' ? tencoder.encode(key) : key,
     { name: 'HMAC', hash: 'SHA-256' },
     false,
     ['sign'],
   );
-  const data = encoder.encode(content);
+  const data = tencoder.encode(content);
 
   return await globalThis.crypto.subtle.sign('HMAC', secret, data);
 };
