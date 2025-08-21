@@ -44,7 +44,7 @@ class S3mini {
    */
   readonly accessKeyId: string;
   readonly secretAccessKey: string;
-  readonly endpoint: string;
+  readonly endpoint: URL;
   readonly region: string;
   readonly requestSizeInBytes: number;
   readonly requestAbortTimeout?: number;
@@ -64,7 +64,7 @@ class S3mini {
     this._validateConstructorParams(accessKeyId, secretAccessKey, endpoint);
     this.accessKeyId = accessKeyId;
     this.secretAccessKey = secretAccessKey;
-    this.endpoint = this._ensureValidUrl(endpoint);
+    this.endpoint = new URL(this._ensureValidUrl(endpoint));
     this.region = region;
     this.requestSizeInBytes = requestSizeInBytes;
     this.requestAbortTimeout = requestAbortTimeout;
@@ -112,7 +112,7 @@ class S3mini {
         // Include some general context, but sanitize sensitive parts
         context: this._sanitize({
           region: this.region,
-          endpoint: this.endpoint,
+          endpoint: this.endpoint.toString(),
           // Only include the first few characters of the access key, if it exists
           accessKeyId: this.accessKeyId ? `${this.accessKeyId.substring(0, 4)}...` : undefined,
         }),
@@ -849,9 +849,6 @@ class S3mini {
     ssecHeaders?: IT.SSECHeaders,
     additionalHeaders?: IT.AWSHeaders,
   ): Promise<Response> {
-    // if (!(data instanceof Buffer || typeof data === 'string')) {
-    //   throw new TypeError(C.ERROR_DATA_BUFFER_REQUIRED);
-    // }
     return this._signedRequest('PUT', key, {
       body: data,
       headers: {
@@ -1068,6 +1065,137 @@ class S3mini {
     }
     xml += '</CompleteMultipartUpload>';
     return xml;
+  }
+
+  /**
+   * Copies an object from one location to another within the S3-compatible service.
+   * @param {string} sourceKey - The key of the source object to copy.
+   * @param {string} destinationKey - The key where the object will be copied to.
+   * @param {IT.CopyObjectOptions} [options={}] - Additional options for the copy operation.
+   * @returns {Promise<IT.CopyObjectResult>} A promise that resolves to the copy result containing the ETag and last modified date.
+   * @throws {TypeError} If sourceKey or destinationKey is invalid.
+   * @throws {Error} If the copy operation fails.
+   * @example
+   * // Simple copy
+   * const result = await s3.copyObject('source/file.txt', 'destination/file.txt');
+   * console.log(`Copied with ETag: ${result.etag}`);
+   *
+   * // Copy with metadata directive
+   * const result = await s3.copyObject(
+   *   'source/file.txt',
+   *   'destination/file.txt',
+   *   {
+   *     metadataDirective: 'REPLACE',
+   *     metadata: {
+   *       'x-amz-meta-custom': 'value'
+   *     }
+   *   }
+   * );
+   *
+   * // Copy with server-side encryption
+   * const result = await s3.copyObject(
+   *   'encrypted/source.txt',
+   *   'encrypted/dest.txt',
+   *   {
+   *     sourceSSECHeaders: {
+   *       'x-amz-copy-source-server-side-encryption-customer-algorithm': 'AES256',
+   *       'x-amz-copy-source-server-side-encryption-customer-key': sourceKey,
+   *       'x-amz-copy-source-server-side-encryption-customer-key-MD5': sourceKeyMD5
+   *     },
+   *     destinationSSECHeaders: {
+   *       'x-amz-server-side-encryption-customer-algorithm': 'AES256',
+   *       'x-amz-server-side-encryption-customer-key': destKey,
+   *       'x-amz-server-side-encryption-customer-key-MD5': destKeyMD5
+   *     }
+   *   }
+   * );
+   */
+  public async copyObject(
+    sourceKey: string,
+    destinationKey: string,
+    options: IT.CopyObjectOptions = {},
+  ): Promise<IT.CopyObjectResult> {
+    // Validate parameters
+    this._checkKey(sourceKey);
+    this._checkKey(destinationKey);
+
+    const {
+      metadataDirective = 'COPY',
+      metadata = {},
+      contentType,
+      storageClass,
+      taggingDirective,
+      websiteRedirectLocation,
+      sourceSSECHeaders = {},
+      destinationSSECHeaders = {},
+      additionalHeaders = {},
+    } = options;
+    const url = new URL(this.endpoint);
+    const bucket = url.pathname.split('/').filter(p => p)[0] || '';
+    const copySource = `/${bucket ? `${bucket}/` : ''}${U.uriEscape(sourceKey)}`;
+
+    const headers: Record<string, string | number> = {
+      'x-amz-copy-source': copySource,
+      'x-amz-metadata-directive': metadataDirective,
+      ...additionalHeaders,
+      ...(contentType && { [C.HEADER_CONTENT_TYPE]: contentType }),
+      ...(storageClass && { 'x-amz-storage-class': storageClass }),
+      ...(taggingDirective && { 'x-amz-tagging-directive': taggingDirective }),
+      ...(websiteRedirectLocation && { 'x-amz-website-redirect-location': websiteRedirectLocation }),
+      ...this._buildSSECHeaders(sourceSSECHeaders, destinationSSECHeaders),
+      ...(metadataDirective === 'REPLACE' ? this._buildMetadataHeaders(metadata) : {}),
+    } as Record<string, string | number>;
+
+    try {
+      const res = await this._signedRequest('PUT', destinationKey, {
+        headers,
+        tolerated: [200],
+      });
+      return this._parseCopyObjectResponse(await res.text());
+    } catch (err) {
+      this._log('error', `Error copying object from ${sourceKey} to ${destinationKey}`, {
+        error: String(err),
+      });
+      throw err;
+    }
+  }
+
+  private _buildSSECHeaders(
+    sourceHeaders: Record<string, string | number>,
+    destHeaders: Record<string, string | number>,
+  ): Record<string, string | number> {
+    const headers: Record<string, string | number> = {};
+    Object.entries({ ...sourceHeaders, ...destHeaders }).forEach(([k, v]) => {
+      if (v !== undefined) {
+        headers[k] = v;
+      }
+    });
+    return headers;
+  }
+
+  private _buildMetadataHeaders(metadata: Record<string, string>): Record<string, string> {
+    const headers: Record<string, string> = {};
+    Object.entries(metadata).forEach(([k, v]) => {
+      headers[k.startsWith('x-amz-meta-') ? k : `x-amz-meta-${k}`] = v;
+    });
+    return headers;
+  }
+
+  private _parseCopyObjectResponse(xmlText: string): IT.CopyObjectResult {
+    const parsed = U.parseXml(xmlText) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== 'object') {
+      throw new Error(`${C.ERROR_PREFIX}Unexpected copyObject response format`);
+    }
+    const result = (parsed.CopyObjectResult || parsed.copyObjectResult || parsed) as Record<string, unknown>;
+    const etag = result.ETag || result.eTag || result.etag;
+    const lastModified = result.LastModified || result.lastModified;
+    if (!etag || typeof etag !== 'string') {
+      throw new Error(`${C.ERROR_PREFIX}ETag not found in copyObject response`);
+    }
+    return {
+      etag: U.sanitizeETag(etag),
+      lastModified: lastModified ? new Date(lastModified as string) : undefined,
+    };
   }
 
   /**

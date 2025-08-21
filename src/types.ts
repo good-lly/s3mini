@@ -97,3 +97,52 @@ export interface XmlMap {
   [key: string]: XmlValue | XmlValue[]; // one or many children
   [key: number]: XmlValue | XmlValue[]; // allow numeric keys
 }
+
+export interface CopyObjectOptions {
+  /**
+   * Specifies whether the metadata is copied from the source object or replaced with metadata provided in the request.
+   * Valid values: 'COPY' | 'REPLACE'
+   * Default: 'COPY'
+   */
+  metadataDirective?: 'COPY' | 'REPLACE';
+
+  /**
+   * Metadata to be set on the destination object when metadataDirective is 'REPLACE'.
+   * Keys can be provided with or without 'x-amz-meta-' prefix.
+   */
+  metadata?: Record<string, string>;
+  contentType?: string;
+
+  /**
+   * Storage class for the destination object.
+   * Valid values: 'STANDARD' | 'REDUCED_REDUNDANCY' | 'STANDARD_IA' | 'ONEZONE_IA' | 'INTELLIGENT_TIERING' | 'GLACIER' | 'DEEP_ARCHIVE' | 'GLACIER_IR'
+   */
+  storageClass?: string;
+
+  /**
+   * Specifies whether the object tag-set is copied from the source object or replaced with tag-set provided in the request.
+   * Valid values: 'COPY' | 'REPLACE'
+   */
+  taggingDirective?: 'COPY' | 'REPLACE';
+
+  /**
+   * If the bucket is configured as a website, redirects requests for this object to another object or URL.
+   */
+  websiteRedirectLocation?: string;
+
+  /**
+   * Server-Side Encryption with Customer-Provided Keys headers for the source object.
+   * Should include:
+   * - x-amz-copy-source-server-side-encryption-customer-algorithm
+   * - x-amz-copy-source-server-side-encryption-customer-key
+   * - x-amz-copy-source-server-side-encryption-customer-key-MD5
+   */
+  sourceSSECHeaders?: Record<string, string | number>;
+  destinationSSECHeaders?: SSECHeaders;
+  additionalHeaders?: Record<string, string | number>;
+}
+
+export interface CopyObjectResult {
+  etag: string;
+  lastModified?: Date;
+}
