@@ -152,5 +152,7 @@ export interface CopyObjectResult {
  * But it should be excluded in other environments (e.g. Cloudflare).
  */
 export type MaybeBuffer = typeof globalThis extends { Buffer?: infer B }
-  ? (B extends { new(...a: any[]): any } ? InstanceType<B> : never)
+  ? B extends { new (...a: any[]): any }
+    ? InstanceType<B>
+    : never
   : never;
