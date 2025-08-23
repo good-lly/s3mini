@@ -146,3 +146,11 @@ export interface CopyObjectResult {
   etag: string;
   lastModified?: Date;
 }
+
+/**
+ * Where Buffer is available, e.g. when @types/node is loaded, we want to use it.
+ * But it should be excluded in other environments (e.g. Cloudflare).
+ */
+export type MaybeBuffer = typeof globalThis extends { Buffer?: infer B }
+  ? (B extends { new(...a: any[]): any } ? InstanceType<B> : never)
+  : never;

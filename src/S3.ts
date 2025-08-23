@@ -215,18 +215,22 @@ class S3mini {
     return { filteredOpts, conditionalHeaders };
   }
 
-  private _validateUploadPartParams(
-    key: string,
-    uploadId: string,
-    data: Buffer | string,
-    partNumber: number,
-    opts: object,
-  ): void {
-    this._checkKey(key);
-    if (!(data instanceof Buffer || typeof data === 'string')) {
+  private _validateData(data: unknown): BodyInit {
+    if (!((globalThis.Buffer && data instanceof globalThis.Buffer) || typeof data === 'string')) {
       this._log('error', C.ERROR_DATA_BUFFER_REQUIRED);
       throw new TypeError(C.ERROR_DATA_BUFFER_REQUIRED);
     }
+    return data;
+  }
+
+  private _validateUploadPartParams(
+    key: string,
+    uploadId: string,
+    data: IT.MaybeBuffer | string,
+    partNumber: number,
+    opts: object,
+  ): BodyInit {
+    this._checkKey(key);
     if (typeof uploadId !== 'string' || uploadId.trim().length === 0) {
       this._log('error', C.ERROR_UPLOAD_ID_REQUIRED);
       throw new TypeError(C.ERROR_UPLOAD_ID_REQUIRED);
@@ -236,6 +240,7 @@ class S3mini {
       throw new TypeError(`${C.ERROR_PREFIX}partNumber must be a positive integer`);
     }
     this._checkOpts(opts);
+    return this._validateData(data);
   }
 
   private async _sign(
@@ -299,13 +304,13 @@ class S3mini {
     key: string, // ‘’ allowed for bucket‑level ops
     {
       query = {}, // ?query=string
-      body = '', // string | Buffer | undefined
+      body = '', // BodyInit | undefined
       headers = {}, // extra/override headers
       tolerated = [], // [200, 404] etc.
       withQuery = false, // append query string to signed URL
     }: {
       query?: Record<string, unknown>;
-      body?: string | Buffer;
+      body?: BodyInit;
       headers?: Record<string, string | number | undefined> | IT.SSECHeaders | IT.AWSHeaders;
       tolerated?: number[];
       withQuery?: boolean;
@@ -844,13 +849,13 @@ class S3mini {
    */
   public async putObject(
     key: string,
-    data: string | Buffer,
+    data: string | IT.MaybeBuffer,
     fileType: string = C.DEFAULT_STREAM_CONTENT_TYPE,
     ssecHeaders?: IT.SSECHeaders,
     additionalHeaders?: IT.AWSHeaders,
   ): Promise<Response> {
     return this._signedRequest('PUT', key, {
-      body: data,
+      body: this._validateData(data),
       headers: {
         [C.HEADER_CONTENT_LENGTH]: U.getByteSize(data),
         [C.HEADER_CONTENT_TYPE]: fileType,
@@ -933,17 +938,17 @@ class S3mini {
   public async uploadPart(
     key: string,
     uploadId: string,
-    data: Buffer | string,
+    data: IT.MaybeBuffer | string,
     partNumber: number,
     opts: Record<string, unknown> = {},
     ssecHeaders?: IT.SSECHeaders,
   ): Promise<IT.UploadPart> {
-    this._validateUploadPartParams(key, uploadId, data, partNumber, opts);
+    const body = this._validateUploadPartParams(key, uploadId, data, partNumber, opts);
 
     const query = { uploadId, partNumber, ...opts };
     const res = await this._signedRequest('PUT', key, {
       query,
-      body: data,
+      body,
       headers: {
         [C.HEADER_CONTENT_LENGTH]: U.getByteSize(data),
         ...ssecHeaders,
@@ -1304,7 +1309,7 @@ class S3mini {
     url: string,
     method: IT.HttpMethod,
     headers: Record<string, string>,
-    body?: string | Buffer,
+    body?: BodyInit,
     toleratedStatusCodes: number[] = [],
   ): Promise<Response> {
     this._log('info', `Sending ${method} request to ${url}`, `headers: ${JSON.stringify(headers)}`);
@@ -1312,7 +1317,7 @@ class S3mini {
       const res = await fetch(url, {
         method,
         headers,
-        body: ['GET', 'HEAD'].includes(method) ? undefined : (body as string),
+        body: ['GET', 'HEAD'].includes(method) ? undefined : body,
         signal: this.requestAbortTimeout !== undefined ? AbortSignal.timeout(this.requestAbortTimeout) : undefined,
       });
       this._log('info', `Response status: ${res.status}, tolerated: ${toleratedStatusCodes.join(',')}`);
