@@ -1073,57 +1073,14 @@ class S3mini {
   }
 
   /**
-   * Copies an object from one location to another within the S3-compatible service.
-   * @param {string} sourceKey - The key of the source object to copy.
-   * @param {string} destinationKey - The key where the object will be copied to.
-   * @param {IT.CopyObjectOptions} [options={}] - Additional options for the copy operation.
-   * @returns {Promise<IT.CopyObjectResult>} A promise that resolves to the copy result containing the ETag and last modified date.
-   * @throws {TypeError} If sourceKey or destinationKey is invalid.
-   * @throws {Error} If the copy operation fails.
-   * @example
-   * // Simple copy
-   * const result = await s3.copyObject('source/file.txt', 'destination/file.txt');
-   * console.log(`Copied with ETag: ${result.etag}`);
-   *
-   * // Copy with metadata directive
-   * const result = await s3.copyObject(
-   *   'source/file.txt',
-   *   'destination/file.txt',
-   *   {
-   *     metadataDirective: 'REPLACE',
-   *     metadata: {
-   *       'x-amz-meta-custom': 'value'
-   *     }
-   *   }
-   * );
-   *
-   * // Copy with server-side encryption
-   * const result = await s3.copyObject(
-   *   'encrypted/source.txt',
-   *   'encrypted/dest.txt',
-   *   {
-   *     sourceSSECHeaders: {
-   *       'x-amz-copy-source-server-side-encryption-customer-algorithm': 'AES256',
-   *       'x-amz-copy-source-server-side-encryption-customer-key': sourceKey,
-   *       'x-amz-copy-source-server-side-encryption-customer-key-MD5': sourceKeyMD5
-   *     },
-   *     destinationSSECHeaders: {
-   *       'x-amz-server-side-encryption-customer-algorithm': 'AES256',
-   *       'x-amz-server-side-encryption-customer-key': destKey,
-   *       'x-amz-server-side-encryption-customer-key-MD5': destKeyMD5
-   *     }
-   *   }
-   * );
+   * Executes the copy operation for local copying (same bucket/endpoint).
+   * @private
    */
-  public async copyObject(
-    sourceKey: string,
+  private async _executeCopyOperation(
     destinationKey: string,
-    options: IT.CopyObjectOptions = {},
+    copySource: string,
+    options: IT.CopyObjectOptions,
   ): Promise<IT.CopyObjectResult> {
-    // Validate parameters
-    this._checkKey(sourceKey);
-    this._checkKey(destinationKey);
-
     const {
       metadataDirective = 'COPY',
       metadata = {},
@@ -1135,9 +1092,6 @@ class S3mini {
       destinationSSECHeaders = {},
       additionalHeaders = {},
     } = options;
-    const url = new URL(this.endpoint);
-    const bucket = url.pathname.split('/').filter(p => p)[0] || '';
-    const copySource = `/${bucket ? `${bucket}/` : ''}${U.uriEscape(sourceKey)}`;
 
     const headers: Record<string, string | number> = {
       'x-amz-copy-source': copySource,
@@ -1149,7 +1103,7 @@ class S3mini {
       ...(websiteRedirectLocation && { 'x-amz-website-redirect-location': websiteRedirectLocation }),
       ...this._buildSSECHeaders(sourceSSECHeaders, destinationSSECHeaders),
       ...(metadataDirective === 'REPLACE' ? this._buildMetadataHeaders(metadata) : {}),
-    } as Record<string, string | number>;
+    };
 
     try {
       const res = await this._signedRequest('PUT', destinationKey, {
@@ -1158,11 +1112,33 @@ class S3mini {
       });
       return this._parseCopyObjectResponse(await res.text());
     } catch (err) {
-      this._log('error', `Error copying object from ${sourceKey} to ${destinationKey}`, {
+      this._log('error', `Error in copy operation to ${destinationKey}`, {
         error: String(err),
       });
       throw err;
     }
+  }
+  /**
+   * Copies an object within the same bucket (local copy).
+   * @param {string} sourceKey - The key of the source object to copy.
+   * @param {string} destinationKey - The key where the object will be copied to.
+   * @param {IT.CopyObjectOptions} [options={}] - Additional options for the copy operation.
+   * @returns {Promise<IT.CopyObjectResult>} A promise that resolves to the copy result.
+   */
+  public copyObject(
+    sourceKey: string,
+    destinationKey: string,
+    options: IT.CopyObjectOptions = {},
+  ): Promise<IT.CopyObjectResult> {
+    // Validate parameters
+    this._checkKey(sourceKey);
+    this._checkKey(destinationKey);
+
+    const url = new URL(this.endpoint);
+    const bucket = url.pathname.split('/').filter(p => p)[0] || '';
+    const copySource = '/' + (bucket ? bucket + '/' : '') + U.uriEscape(sourceKey);
+
+    return this._executeCopyOperation(destinationKey, copySource, options);
   }
 
   private _buildSSECHeaders(
@@ -1176,6 +1152,38 @@ class S3mini {
       }
     });
     return headers;
+  }
+
+  /**
+   * Moves an object within the same bucket (copy then delete).
+   * @param {string} sourceKey - The key of the source object to move.
+   * @param {string} destinationKey - The key where the object will be moved to.
+   * @param {IT.CopyObjectOptions} [options={}] - Additional options for the copy operation.
+   * @returns {Promise<IT.CopyObjectResult>} A promise that resolves to the copy result.
+   * @throws {Error} If the copy succeeds but delete fails, the error includes copy result.
+   */
+  public async moveObject(
+    sourceKey: string,
+    destinationKey: string,
+    options: IT.CopyObjectOptions = {},
+  ): Promise<IT.CopyObjectResult> {
+    try {
+      // First copy the object
+      const copyResult = await this.copyObject(sourceKey, destinationKey, options);
+
+      // Then delete the source
+      const deleteSuccess = await this.deleteObject(sourceKey);
+      if (!deleteSuccess) {
+        throw new Error(`${C.ERROR_PREFIX}Failed to delete source object after successful copy`);
+      }
+
+      return copyResult;
+    } catch (err) {
+      this._log('error', `Error moving object from ${sourceKey} to ${destinationKey}`, {
+        error: String(err),
+      });
+      throw err;
+    }
   }
 
   private _buildMetadataHeaders(metadata: Record<string, string>): Record<string, string> {
