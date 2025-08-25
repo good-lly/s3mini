@@ -73,7 +73,7 @@ The library supports a subset of S3 operations, focusing on essential features, 
 - ✅ completeMultipartUpload
 - ✅ abortMultipartUpload
 - ✅ uploadPart
-- ❌ CopyObject: Not implemented (tbd)
+- ✅ CopyObject: Local copyObject/moveObject(copyObject w delete)
 
 Put/Get objects with SSE-C (server-side encryption with customer-provided keys) is supported, but only tested on Cloudflare R2!
 
@@ -104,13 +104,12 @@ mv example.env .env
 >
 > This library is designed to run in environments like **Node.js**, **Bun**, and **Cloudflare Workers**. It does **not support browser environments** due to the use of Node.js APIs and polyfills.
 >
-> **Cloudflare Workers:** To enable built-in Node.js Crypto API, add the `nodejs_compat` compatibility flag to your Wrangler configuration file. This also enables `nodejs_compat_v2` as long as your compatibility date is `2024-09-23` or later. [Learn more about the Node.js compatibility flag and v2](https://developers.cloudflare.com/workers/configuration/compatibility-dates/#nodejs-compatibility-flag).
+> **Cloudflare Workers:** Now works without `nodejs_compat` compatibility flag, using native WebCrypto!
 
 ## Usage
 
 > [!WARNING]
-> `s3mini` is a deprecated alias retained solely for backward compatibility.
-> It is scheduled for removal in a future release. Please migrate to the new `S3mini` class.
+> `s3mini` was a deprecated alias removed in a recent `0.5.0` release. Please migrate to the new `S3mini` class.
 
 ```typescript
 import { S3mini, sanitizeETag } from 's3mini';
@@ -232,6 +231,9 @@ const rangeStart = 2048 * 1024; // 2 MB
 const rangeEnd = 8 * 1024 * 1024 * 2; // 16 MB
 const rangeResponse = await s3client.getObjectRaw(multipartKey, false, rangeStart, rangeEnd);
 const rangeData = await rangeResponse.arrayBuffer();
+
+// Local copyObject example
+const result = await s3.copyObject('report-2024.pdf', 'archive/report-2024.pdf');
 ```
 
 For more check [USAGE.md](USAGE.md) file, examples and tests.
