@@ -46,6 +46,7 @@ class S3mini {
   readonly secretAccessKey: string;
   readonly endpoint: URL;
   readonly region: string;
+  readonly bucketName: string;
   readonly requestSizeInBytes: number;
   readonly requestAbortTimeout?: number;
   readonly logger?: IT.Logger;
@@ -66,6 +67,7 @@ class S3mini {
     this.secretAccessKey = secretAccessKey;
     this.endpoint = new URL(this._ensureValidUrl(endpoint));
     this.region = region;
+    this.bucketName = this._extractBucketName();
     this.requestSizeInBytes = requestSizeInBytes;
     this.requestAbortTimeout = requestAbortTimeout;
     this.logger = logger;
@@ -380,6 +382,42 @@ class S3mini {
       tolerated: [200, 404, 403, 409], // don’t throw on 404/403 // 409 = bucket already exists
     });
     return res.status === 200;
+  }
+
+  private _extractBucketName(): string {
+    const url = this.endpoint;
+
+    // First check if bucket is in the pathname (path-style URLs)
+    const pathSegments = url.pathname.split('/').filter(p => p);
+    if (pathSegments.length > 0) {
+      if (typeof pathSegments[0] === 'string') {
+        return pathSegments[0];
+      }
+    }
+
+    // Otherwise extract from subdomain (virtual-hosted-style URLs)
+    const hostParts = url.hostname.split('.');
+
+    // Common patterns:
+    // bucket-name.s3.amazonaws.com
+    // bucket-name.s3.region.amazonaws.com
+    // bucket-name.region.digitaloceanspaces.com
+    // bucket-name.region.cdn.digitaloceanspaces.com
+
+    if (hostParts.length >= 3) {
+      // Check if it's a known S3-compatible service
+      const domain = hostParts.slice(-2).join('.');
+      const knownDomains = ['amazonaws.com', 'digitaloceanspaces.com', 'cloudflare.com'];
+
+      if (knownDomains.some(d => domain.includes(d))) {
+        if (typeof hostParts[0] === 'string') {
+          return hostParts[0];
+        }
+      }
+    }
+
+    // Fallback: use the first subdomain
+    return hostParts[0] || '';
   }
 
   /**
@@ -1118,12 +1156,58 @@ class S3mini {
       throw err;
     }
   }
+
   /**
-   * Copies an object within the same bucket (local copy).
-   * @param {string} sourceKey - The key of the source object to copy.
-   * @param {string} destinationKey - The key where the object will be copied to.
-   * @param {IT.CopyObjectOptions} [options={}] - Additional options for the copy operation.
-   * @returns {Promise<IT.CopyObjectResult>} A promise that resolves to the copy result.
+   * Copies an object within the same bucket.
+   *
+   * @param {string} sourceKey - The key of the source object to copy
+   * @param {string} destinationKey - The key where the object will be copied to
+   * @param {IT.CopyObjectOptions} [options={}] - Copy operation options
+   * @param {string} [options.metadataDirective='COPY'] - How to handle metadata ('COPY' | 'REPLACE')
+   * @param {Record<string,string>} [options.metadata={}] - New metadata (only used if metadataDirective='REPLACE')
+   * @param {string} [options.contentType] - New content type for the destination object
+   * @param {string} [options.storageClass] - Storage class for the destination object
+   * @param {string} [options.taggingDirective] - How to handle object tags ('COPY' | 'REPLACE')
+   * @param {string} [options.websiteRedirectLocation] - Website redirect location for the destination
+   * @param {IT.SSECHeaders} [options.sourceSSECHeaders={}] - Encryption headers for reading source (if encrypted)
+   * @param {IT.SSECHeaders} [options.destinationSSECHeaders={}] - Encryption headers for destination
+   * @param {IT.AWSHeaders} [options.additionalHeaders={}] - Extra x-amz-* headers
+   *
+   * @returns {Promise<IT.CopyObjectResult>} Copy result with etag and lastModified date
+   * @throws {TypeError} If sourceKey or destinationKey is invalid
+   * @throws {Error} If copy operation fails or S3 returns an error
+   *
+   * @example
+   * // Simple copy
+   * const result = await s3.copyObject('report-2024.pdf', 'archive/report-2024.pdf');
+   * console.log(`Copied with ETag: ${result.etag}`);
+   *
+   * @example
+   * // Copy with new metadata and content type
+   * const result = await s3.copyObject('data.csv', 'processed/data.csv', {
+   *   metadataDirective: 'REPLACE',
+   *   metadata: {
+   *     'processed-date': new Date().toISOString(),
+   *     'original-name': 'data.csv'
+   *   },
+   *   contentType: 'text/csv; charset=utf-8'
+   * });
+   *
+   * @example
+   * // Copy encrypted object (Cloudflare R2 SSE-C)
+   * const ssecKey = 'n1TKiTaVHlYLMX9n0zHXyooMr026vOiTEFfT+719Hho=';
+   * await s3.copyObject('sensitive.json', 'backup/sensitive.json', {
+   *   sourceSSECHeaders: {
+   *     'x-amz-copy-source-server-side-encryption-customer-algorithm': 'AES256',
+   *     'x-amz-copy-source-server-side-encryption-customer-key': ssecKey,
+   *     'x-amz-copy-source-server-side-encryption-customer-key-md5': 'gepZmzgR7Be/1+K1Aw+6ow=='
+   *   },
+   *   destinationSSECHeaders: {
+   *     'x-amz-server-side-encryption-customer-algorithm': 'AES256',
+   *     'x-amz-server-side-encryption-customer-key': ssecKey,
+   *     'x-amz-server-side-encryption-customer-key-md5': 'gepZmzgR7Be/1+K1Aw+6ow=='
+   *   }
+   * });
    */
   public copyObject(
     sourceKey: string,
@@ -1134,9 +1218,7 @@ class S3mini {
     this._checkKey(sourceKey);
     this._checkKey(destinationKey);
 
-    const url = new URL(this.endpoint);
-    const bucket = url.pathname.split('/').filter(p => p)[0] || '';
-    const copySource = '/' + (bucket ? bucket + '/' : '') + U.uriEscape(sourceKey);
+    const copySource = `/${this.bucketName}/${U.uriEscape(sourceKey)}`;
 
     return this._executeCopyOperation(destinationKey, copySource, options);
   }
@@ -1155,12 +1237,45 @@ class S3mini {
   }
 
   /**
-   * Moves an object within the same bucket (copy then delete).
-   * @param {string} sourceKey - The key of the source object to move.
-   * @param {string} destinationKey - The key where the object will be moved to.
-   * @param {IT.CopyObjectOptions} [options={}] - Additional options for the copy operation.
-   * @returns {Promise<IT.CopyObjectResult>} A promise that resolves to the copy result.
-   * @throws {Error} If the copy succeeds but delete fails, the error includes copy result.
+   * Moves an object within the same bucket (copy + delete atomic-like operation).
+   *
+   * WARNING: Not truly atomic - if delete fails after successful copy, the object
+   * will exist in both locations. Consider your use case carefully.
+   *
+   * @param {string} sourceKey - The key of the source object to move
+   * @param {string} destinationKey - The key where the object will be moved to
+   * @param {IT.CopyObjectOptions} [options={}] - Options passed to the copy operation
+   *
+   * @returns {Promise<IT.CopyObjectResult>} Result from the copy operation
+   * @throws {TypeError} If sourceKey or destinationKey is invalid
+   * @throws {Error} If copy succeeds but delete fails (includes copy result in error)
+   *
+   * @example
+   * // Simple move
+   * await s3.moveObject('temp/upload.tmp', 'files/document.pdf');
+   *
+   * @example
+   * // Move with metadata update
+   * await s3.moveObject('unprocessed/image.jpg', 'processed/image.jpg', {
+   *   metadataDirective: 'REPLACE',
+   *   metadata: {
+   *     'status': 'processed',
+   *     'processed-at': Date.now().toString()
+   *   },
+   *   contentType: 'image/jpeg'
+   * });
+   *
+   * @example
+   * // Safe move with error handling
+   * try {
+   *   const result = await s3.moveObject('inbox/file.dat', 'archive/file.dat');
+   *   console.log(`Moved successfully: ${result.etag}`);
+   * } catch (error) {
+   *   // Check if copy succeeded but delete failed
+   *   if (error.message.includes('delete source object after successful copy')) {
+   *     console.warn('File copied but not deleted from source - manual cleanup needed');
+   *   }
+   * }
    */
   public async moveObject(
     sourceKey: string,

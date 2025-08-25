@@ -389,6 +389,238 @@ export const testRunner = bucket => {
     expect(deletedData).toBe(null);
   });
 
+  // Add these tests within the testRunner function, after the existing tests
+
+  it('copy object within same bucket', async () => {
+    const sourceKey = 'copy-source.txt';
+    const destKey = 'copy-destination.txt';
+    const content = 'Content to be copied';
+
+    // Setup: create source object
+    await s3client.putObject(sourceKey, content, 'text/plain');
+
+    // Basic copy
+    const copyResult = await s3client.copyObject(sourceKey, destKey);
+    expect(copyResult).toBeDefined();
+    expect(copyResult.etag).toBeDefined();
+    expect(copyResult.etag.length).toBeGreaterThanOrEqual(32);
+
+    // Verify both objects exist
+    const sourceData = await s3client.getObject(sourceKey);
+    const destData = await s3client.getObject(destKey);
+    expect(sourceData).toBe(content);
+    expect(destData).toBe(content);
+
+    // Copy with metadata replacement
+    const destKey2 = 'copy-with-metadata.txt';
+    const copyResult2 = await s3client.copyObject(sourceKey, destKey2, {
+      metadataDirective: 'REPLACE',
+      metadata: {
+        'custom-key': 'custom-value',
+        'another-key': 'another-value',
+      },
+      contentType: 'text/markdown',
+    });
+    expect(copyResult2).toBeDefined();
+    expect(copyResult2.etag).toBeDefined();
+
+    // Verify the new object exists
+    const destData2 = await s3client.getObjectResponse(destKey2);
+    expect(destData2).toBeDefined();
+    expect(destData2.headers.get('content-type')).toBe('text/markdown');
+    const destContent2 = await destData2.text();
+    expect(destContent2).toBe(content);
+
+    // Copy with special characters
+    const specialSourceKey = 'special source key with spaces & chars!.txt';
+    const specialDestKey = 'special dest key with spaces & chars!.txt';
+    await s3client.putObject(specialSourceKey, content);
+
+    const copyResult3 = await s3client.copyObject(specialSourceKey, specialDestKey);
+    expect(copyResult3).toBeDefined();
+    expect(copyResult3.etag).toBeDefined();
+
+    const specialData = await s3client.getObject(specialDestKey);
+    expect(specialData).toBe(content);
+
+    // Cleanup
+    await s3client.deleteObjects([sourceKey, destKey, destKey2, specialSourceKey, specialDestKey]);
+
+    // Verify cleanup
+    expect(await s3client.objectExists(sourceKey)).toBe(false);
+    expect(await s3client.objectExists(destKey)).toBe(false);
+    expect(await s3client.objectExists(destKey2)).toBe(false);
+  });
+
+  it('move object within same bucket', async () => {
+    const sourceKey = 'move-source.txt';
+    const destKey = 'move-destination.txt';
+    const content = 'Content to be moved';
+
+    // Setup: create source object
+    const putResult = await s3client.putObject(sourceKey, content, 'text/plain');
+    const originalEtag = sanitizeETag(putResult.headers.get('etag'));
+    expect(originalEtag).toBeDefined();
+
+    // Verify source exists
+    expect(await s3client.objectExists(sourceKey)).toBe(true);
+
+    // Move the object
+    const moveResult = await s3client.moveObject(sourceKey, destKey);
+    expect(moveResult).toBeDefined();
+    expect(moveResult.etag).toBeDefined();
+
+    // Verify source no longer exists
+    expect(await s3client.objectExists(sourceKey)).toBe(false);
+    const sourceData = await s3client.getObject(sourceKey);
+    expect(sourceData).toBe(null);
+
+    // Verify destination exists with same content
+    expect(await s3client.objectExists(destKey)).toBe(true);
+    const destData = await s3client.getObject(destKey);
+    expect(destData).toBe(content);
+
+    // Move with metadata replacement
+    const destKey2 = 'move-with-metadata.txt';
+    await s3client.putObject('temp-source.txt', content);
+
+    const moveResult2 = await s3client.moveObject('temp-source.txt', destKey2, {
+      metadataDirective: 'REPLACE',
+      metadata: {
+        moved: 'true',
+        timestamp: new Date().toISOString(),
+      },
+      contentType: 'application/json',
+    });
+    expect(moveResult2).toBeDefined();
+    expect(moveResult2.etag).toBeDefined();
+
+    // Verify source deleted and destination exists
+    expect(await s3client.objectExists('temp-source.txt')).toBe(false);
+    const destResponse2 = await s3client.getObjectResponse(destKey2);
+    expect(destResponse2).toBeDefined();
+    expect(destResponse2.headers.get('content-type')).toBe('application/json');
+
+    // Move with special characters
+    const specialSourceKey = 'special move source & chars!.txt';
+    const specialDestKey = 'special move dest & chars!.txt';
+    await s3client.putObject(specialSourceKey, content);
+
+    const moveResult3 = await s3client.moveObject(specialSourceKey, specialDestKey);
+    expect(moveResult3).toBeDefined();
+
+    expect(await s3client.objectExists(specialSourceKey)).toBe(false);
+    expect(await s3client.objectExists(specialDestKey)).toBe(true);
+
+    // Cleanup
+    await s3client.deleteObjects([destKey, destKey2, specialDestKey]);
+
+    // Verify cleanup
+    expect(await s3client.objectExists(destKey)).toBe(false);
+    expect(await s3client.objectExists(destKey2)).toBe(false);
+    expect(await s3client.objectExists(specialDestKey)).toBe(false);
+  });
+
+  it('copy and move large multipart object', async () => {
+    const sourceKey = 'large-copy-source.bin';
+    const copyDestKey = 'large-copy-dest.bin';
+    const moveDestKey = 'large-move-dest.bin';
+
+    // Create a large object using multipart upload
+    const partSize = EIGHT_MB;
+    const totalParts = Math.ceil(large_buffer.length / partSize);
+    const uploadId = await s3client.getMultipartUploadId(sourceKey);
+
+    const uploadPromises = [];
+    for (let i = 0; i < totalParts; i++) {
+      const partBuffer = large_buffer.subarray(i * partSize, (i + 1) * partSize);
+      uploadPromises.push(s3client.uploadPart(sourceKey, uploadId, partBuffer, i + 1));
+    }
+
+    const uploadResponses = await Promise.all(uploadPromises);
+    const parts = uploadResponses.map((response, index) => ({
+      partNumber: index + 1,
+      etag: response.etag,
+    }));
+
+    const completeResponse = await s3client.completeMultipartUpload(sourceKey, uploadId, parts);
+    expect(completeResponse.etag).toBeDefined();
+
+    // Copy the large object
+    const copyResult = await s3client.copyObject(sourceKey, copyDestKey);
+    expect(copyResult).toBeDefined();
+    expect(copyResult.etag).toBeDefined();
+
+    // Verify both exist and have same size
+    const sourceLength = await s3client.getContentLength(sourceKey);
+    const copyLength = await s3client.getContentLength(copyDestKey);
+    expect(copyLength).toBe(sourceLength);
+    expect(copyLength).toBe(large_buffer.length);
+
+    // Move the copy to another location
+    const moveResult = await s3client.moveObject(copyDestKey, moveDestKey);
+    expect(moveResult).toBeDefined();
+
+    // Verify move worked
+    expect(await s3client.objectExists(copyDestKey)).toBe(false);
+    expect(await s3client.objectExists(moveDestKey)).toBe(true);
+
+    const moveLength = await s3client.getContentLength(moveDestKey);
+    expect(moveLength).toBe(large_buffer.length);
+
+    // Cleanup
+    await s3client.deleteObjects([sourceKey, moveDestKey]);
+    expect(await s3client.objectExists(sourceKey)).toBe(false);
+    expect(await s3client.objectExists(moveDestKey)).toBe(false);
+  });
+
+  // Add Cloudflare-specific SSE-C tests if needed
+  if (providerName === 'cloudflare') {
+    it('copy and move with SSE-C encryption', async () => {
+      const ssecHeaders = {
+        'x-amz-server-side-encryption-customer-algorithm': 'AES256',
+        'x-amz-server-side-encryption-customer-key': 'n1TKiTaVHlYLMX9n0zHXyooMr026vOiTEFfT+719Hho=',
+        'x-amz-server-side-encryption-customer-key-md5': 'gepZmzgR7Be/1+K1Aw+6ow==',
+      };
+
+      const sourceKey = 'ssec-copy-source.txt';
+      const destKey = 'ssec-copy-dest.txt';
+      const content = 'Encrypted content';
+
+      // Create encrypted source
+      await s3client.putObject(sourceKey, content, 'text/plain', ssecHeaders);
+
+      // Copy with SSE-C (both source and destination encrypted)
+      const copyResult = await s3client.copyObject(sourceKey, destKey, {
+        sourceSSECHeaders: {
+          'x-amz-copy-source-server-side-encryption-customer-algorithm': 'AES256',
+          'x-amz-copy-source-server-side-encryption-customer-key': 'n1TKiTaVHlYLMX9n0zHXyooMr026vOiTEFfT+719Hho=',
+          'x-amz-copy-source-server-side-encryption-customer-key-md5': 'gepZmzgR7Be/1+K1Aw+6ow==',
+        },
+        destinationSSECHeaders: ssecHeaders,
+      });
+
+      expect(copyResult).toBeDefined();
+      expect(copyResult.etag).toBeDefined();
+
+      // Verify destination is encrypted and has correct content
+      const destData = await s3client.getObject(destKey, {}, ssecHeaders);
+      expect(destData).toBe(content);
+
+      // Try to read without encryption headers (should fail)
+      try {
+        await s3client.getObject(destKey);
+        expect(true).toBe(false); // Should not reach here
+      } catch (err) {
+        expect(err).toBeDefined();
+        expect(err.message).toContain('400');
+      }
+
+      // Cleanup
+      await s3client.deleteObjects([sourceKey, destKey]);
+    });
+  }
+
   it('extensive list objects', async () => {
     const prefix = `test-prefix-${Date.now()}/`;
     const objAll = await s3client.listObjects('/', prefix);
@@ -423,24 +655,51 @@ export const testRunner = bucket => {
     const totalKeys = 1_114;
     const pageSmall = 2;
     const pageLarge = 900;
+    let counter = 0;
+    let attempts = 0;
+    let errors = [];
 
     // Bucket must start empty for this prefix
     expect(await s3client.listObjects('/', prefix)).toEqual([]);
-    let counter = 0;
     // Upload 1 114 objects in parallel
     const generator = function* (n) {
       for (let i = 0; i < n; i++)
         yield async () => {
-          const success = await s3client.putObject(`${prefix}object${i}.txt`, contentString);
-          if (!success) {
-            throw new Error(`Failed to upload ${prefix}object${i}.txt`);
-          } else {
-            counter++;
+          try {
+            const response = await s3client.putObject(`${prefix}object${i}.txt`, contentString);
+            attempts++;
+            if (response.status === 200) {
+              counter++;
+            } else {
+              throw new Error(`Unexpected status ${response.status}`);
+            }
+          } catch (err) {
+            errors.push({ index: i, error: err.message || err });
+            throw err; // Re-throw to let runInBatches handle it
           }
         };
     };
-    await runInBatches(generator(totalKeys), OP_CAP, 1_000);
+    if (providerName === 'backblaze') {
+      // Backblaze-specific: retry failed uploads
+      await runInBatches(generator(totalKeys), 20, 1_000);
 
+      // Check what's missing and retry
+      const uploaded = await s3client.listObjects('/', prefix);
+      const missingCount = totalKeys - uploaded.length;
+
+      if (missingCount > 0) {
+        const uploadedKeys = new Set(uploaded.map(o => o.Key));
+        for (let i = 0; i < totalKeys; i++) {
+          const key = `${prefix}object${i}.txt`;
+          if (!uploadedKeys.has(key)) {
+            await s3client.putObject(key, contentString);
+            counter++;
+          }
+        }
+      }
+    } else {
+      await runInBatches(generator(totalKeys), OP_CAP, 1_000);
+    }
     /* ----- assertions ----- */
     // 1️⃣  Small page (2)
     const firstTwo = await s3client.listObjects('/', prefix, pageSmall);
@@ -452,13 +711,18 @@ export const testRunner = bucket => {
     expect(first900Hundred).toBeInstanceOf(Array);
     expect(first900Hundred).toHaveLength(pageLarge); // ✔ array length = 900:contentReference[oaicite:2]{index=2}
     expect(first900Hundred[0].Key).toBe(`${prefix}object0.txt`); // ✔ first object key
-
+    await new Promise(resolve => setTimeout(resolve, 2000));
     // 3️⃣  Unlimited (implicit pagination inside helper)
-    const everything = await s3client.listObjects('/', prefix); // maxKeys = undefined ⇒ list all
+    let everything = await s3client.listObjects('/', prefix); // maxKeys = undefined ⇒ list all
     expect(everything).toBeInstanceOf(Array);
     expect(everything).toHaveLength(counter);
 
     // cleanup and test deleteObjects
+    for (let i = 0; i < 3; i++) {
+      everything = await s3client.listObjects('/', prefix);
+      if (everything.length === totalKeys) break;
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
     expect(everything.length).toBe(totalKeys);
     const massDelete = await s3client.deleteObjects(everything.map(o => o.Key));
 
