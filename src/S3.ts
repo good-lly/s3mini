@@ -291,7 +291,7 @@ class S3mini {
     }
     const canonicalRequest = `${method}\n${url.pathname}\n${this._buildCanonicalQueryString(query)}\n${canonicalHeaders}\n\n${signedHeaders}\n${C.UNSIGNED_PAYLOAD}`;
     const stringToSign = `${C.AWS_ALGORITHM}\n${fullDatetime}\n${credentialScope}\n${U.hexFromBuffer(await U.sha256(canonicalRequest))}`;
-    if (shortDatetime !== this.signingKeyDate) {
+    if (shortDatetime !== this.signingKeyDate || !this.signingKey) {
       this.signingKeyDate = shortDatetime;
       this.signingKey = await this._getSignatureKey(shortDatetime);
     }
