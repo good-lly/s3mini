@@ -6,6 +6,7 @@ export interface S3Config {
   requestSizeInBytes?: number;
   requestAbortTimeout?: number;
   logger?: Logger;
+  fetch?: typeof fetch;
 }
 
 export interface SSECHeaders {
