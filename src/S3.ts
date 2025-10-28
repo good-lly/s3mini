@@ -40,6 +40,7 @@ class S3mini {
    * @param {number} [config.requestSizeInBytes=8388608] - The request size of a single request in bytes (AWS S3 is 8MB).
    * @param {number} [config.requestAbortTimeout=undefined] - The timeout in milliseconds after which a request should be aborted (careful on streamed requests).
    * @param {Object} [config.logger=null] - A logger object with methods like info, warn, error.
+   * @param {typeof fetch} [config.fetch=globalThis.fetch] - Custom fetch implementation to use for HTTP requests.
    * @throws {TypeError} Will throw an error if required parameters are missing or of incorrect type.
    */
   readonly accessKeyId: string;
@@ -50,6 +51,7 @@ class S3mini {
   readonly requestSizeInBytes: number;
   readonly requestAbortTimeout?: number;
   readonly logger?: IT.Logger;
+  readonly fetch: typeof fetch;
   private signingKeyDate?: string;
   private signingKey?: ArrayBuffer;
 
@@ -61,6 +63,7 @@ class S3mini {
     requestSizeInBytes = C.DEFAULT_REQUEST_SIZE_IN_BYTES,
     requestAbortTimeout = undefined,
     logger = undefined,
+    fetch = globalThis.fetch,
   }: IT.S3Config) {
     this._validateConstructorParams(accessKeyId, secretAccessKey, endpoint);
     this.accessKeyId = accessKeyId;
@@ -71,6 +74,7 @@ class S3mini {
     this.requestSizeInBytes = requestSizeInBytes;
     this.requestAbortTimeout = requestAbortTimeout;
     this.logger = logger;
+    this.fetch = fetch;
   }
 
   private _sanitize(obj: unknown): unknown {
@@ -1437,7 +1441,7 @@ class S3mini {
   ): Promise<Response> {
     this._log('info', `Sending ${method} request to ${url}`, `headers: ${JSON.stringify(headers)}`);
     try {
-      const res = await fetch(url, {
+      const res = await this.fetch(url, {
         method,
         headers,
         body: !['GET', 'HEAD'].includes(method) ? body : undefined,
