@@ -79,7 +79,7 @@ class S3mini {
     }
     return Object.keys(obj).reduce(
       (acc: Record<string, unknown>, key) => {
-        if (C.SENSITIVE_KEYS_REDACTED.includes(key.toLowerCase())) {
+        if (C.SENSITIVE_KEYS_REDACTED.has(key.toLowerCase())) {
           acc[key] = '[REDACTED]';
         } else if (
           typeof (obj as Record<string, unknown>)[key] === 'object' &&
@@ -203,11 +203,9 @@ class S3mini {
   } {
     const filteredOpts: Record<string, string> = {};
     const conditionalHeaders: Record<string, unknown> = {};
-    const ifHeaders = ['if-match', 'if-none-match', 'if-modified-since', 'if-unmodified-since'];
 
     for (const [key, value] of Object.entries(opts)) {
-      if (ifHeaders.includes(key.toLowerCase())) {
-        // Convert to lowercase for consistency
+      if (C.IFHEADERS.has(key.toLowerCase())) {
         conditionalHeaders[key] = value;
       } else {
         filteredOpts[key] = value as string;
@@ -295,7 +293,7 @@ class S3mini {
       this.signingKeyDate = shortDatetime;
       this.signingKey = await this._getSignatureKey(shortDatetime);
     }
-    const signature = U.hexFromBuffer(await U.hmac(this.signingKey!, stringToSign));
+    const signature = U.hexFromBuffer(await U.hmac(this.signingKey, stringToSign));
     headers[C.HEADER_AUTHORIZATION] =
       `${C.AWS_ALGORITHM} Credential=${this.accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
     return { url: url.toString(), headers };
@@ -388,7 +386,7 @@ class S3mini {
     const url = this.endpoint;
 
     // First check if bucket is in the pathname (path-style URLs)
-    const pathSegments = url.pathname.split('/').filter(p => p);
+    const pathSegments = url.pathname.split('/').filter(Boolean);
     if (pathSegments.length > 0) {
       if (typeof pathSegments[0] === 'string') {
         return pathSegments[0];
@@ -1228,11 +1226,11 @@ class S3mini {
     destHeaders: Record<string, string | number>,
   ): Record<string, string | number> {
     const headers: Record<string, string | number> = {};
-    Object.entries({ ...sourceHeaders, ...destHeaders }).forEach(([k, v]) => {
+    for (const [k, v] of Object.entries({ ...sourceHeaders, ...destHeaders })) {
       if (v !== undefined) {
         headers[k] = v;
       }
-    });
+    }
     return headers;
   }
 
@@ -1303,9 +1301,9 @@ class S3mini {
 
   private _buildMetadataHeaders(metadata: Record<string, string>): Record<string, string> {
     const headers: Record<string, string> = {};
-    Object.entries(metadata).forEach(([k, v]) => {
+    for (const [k, v] of Object.entries(metadata)) {
       headers[k.startsWith('x-amz-meta-') ? k : `x-amz-meta-${k}`] = v;
-    });
+    }
     return headers;
   }
 
@@ -1360,11 +1358,13 @@ class S3mini {
     }
     const out = (parsed.DeleteResult || parsed.deleteResult || parsed) as Record<string, unknown>;
     const resultMap = new Map<string, boolean>();
-    keys.forEach(key => resultMap.set(key, false));
+    for (const key of keys) {
+      resultMap.set(key, false);
+    }
     const deleted = out.deleted || out.Deleted;
     if (deleted) {
       const deletedArray = Array.isArray(deleted) ? deleted : [deleted];
-      deletedArray.forEach((item: unknown) => {
+      for (const item of deletedArray) {
         if (item && typeof item === 'object') {
           const obj = item as Record<string, unknown>;
           // Check both key and Key
@@ -1373,14 +1373,14 @@ class S3mini {
             resultMap.set(key, true);
           }
         }
-      });
+      }
     }
 
     // Handle errors (check both cases)
     const errors = out.error || out.Error;
     if (errors) {
       const errorsArray = Array.isArray(errors) ? errors : [errors];
-      errorsArray.forEach((item: unknown) => {
+      for (const item of errorsArray) {
         if (item && typeof item === 'object') {
           const obj = item as Record<string, unknown>;
           // Check both cases for all properties
@@ -1397,7 +1397,7 @@ class S3mini {
             });
           }
         }
-      });
+      }
     }
 
     // Return boolean array in the same order as input keys
@@ -1440,8 +1440,8 @@ class S3mini {
       const res = await fetch(url, {
         method,
         headers,
-        body: ['GET', 'HEAD'].includes(method) ? undefined : body,
-        signal: this.requestAbortTimeout !== undefined ? AbortSignal.timeout(this.requestAbortTimeout) : undefined,
+        body: !['GET', 'HEAD'].includes(method) ? body : undefined,
+        signal: this.requestAbortTimeout ? AbortSignal.timeout(this.requestAbortTimeout) : undefined,
       });
       this._log('info', `Response status: ${res.status}, tolerated: ${toleratedStatusCodes.join(',')}`);
       if (res.ok || toleratedStatusCodes.includes(res.status)) {

@@ -1,11 +1,11 @@
 'use strict';
 
-import { S3mini } from './S3.js';
-import { sanitizeETag, runInBatches } from './utils.js';
+// import { S3mini } from './S3.js';
+// import { sanitizeETag, runInBatches } from './utils.js';
 
 // Export the S3 class as default export and named export
-export { S3mini, sanitizeETag, runInBatches };
-export default S3mini;
+export { S3mini } from './S3.js';
+export { sanitizeETag, runInBatches } from './utils.js';
 
 // Re-export types
 export type {
