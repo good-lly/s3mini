@@ -8,7 +8,8 @@ export const DEFAULT_STREAM_CONTENT_TYPE = 'application/octet-stream';
 export const XML_CONTENT_TYPE = 'application/xml';
 export const JSON_CONTENT_TYPE = 'application/json';
 // List of keys that might contain sensitive information
-export const SENSITIVE_KEYS_REDACTED = ['accessKeyId', 'secretAccessKey', 'sessionToken', 'password', 'token'];
+export const SENSITIVE_KEYS_REDACTED = new Set(['accessKeyId', 'secretAccessKey', 'sessionToken', 'password', 'token']);
+export const IFHEADERS = new Set(['if-match', 'if-none-match', 'if-modified-since', 'if-unmodified-since']);
 export const DEFAULT_REQUEST_SIZE_IN_BYTES = 8 * 1024 * 1024;
 
 // Headers
