@@ -1444,7 +1444,7 @@ class S3mini {
       const res = await this.fetch(url, {
         method,
         headers,
-        body: !['GET', 'HEAD'].includes(method) ? body : undefined,
+        body: ['GET', 'HEAD'].includes(method) ? undefined : body,
         signal: this.requestAbortTimeout ? AbortSignal.timeout(this.requestAbortTimeout) : undefined,
       });
       this._log('info', `Response status: ${res.status}, tolerated: ${toleratedStatusCodes.join(',')}`);

@@ -42,7 +42,7 @@ export const base64FromBuffer = (buffer: ArrayBuffer): string => {
   let result = '';
   for (let i = 0; i < bytes.length; i += chunkSize) {
     const chunk = bytes.subarray(i, i + chunkSize);
-    result += btoa(String.fromCharCode.apply(null, chunk as unknown as number[]));
+    result += btoa(String.fromCodePoint(...chunk));
   }
   return result;
 };
@@ -87,10 +87,8 @@ export const sanitizeETag = (etag: string): string => {
     '"': '',
     '&quot;': '',
     '&#34;': '',
-    '&QUOT;': '',
-    '&#x00022': '',
   };
-  return etag.replace(/(^("|&quot;|&#34;))|(("|&quot;|&#34;)$)/g, m => replaceChars[m] as string);
+  return etag.replaceAll(/(^("|&quot;|&#34;))|(("|&quot;|&#34;)$)/g, m => replaceChars[m] || '');
 };
 
 const entityMap = {
@@ -108,15 +106,15 @@ const entityMap = {
  */
 export const escapeXml = (value: string): string => {
   return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&apos;');
 };
 
 const unescapeXml = (value: string): string =>
-  value.replace(/&(quot|apos|lt|gt|amp);/g, m => entityMap[m as keyof typeof entityMap] ?? m);
+  value.replaceAll(/&(quot|apos|lt|gt|amp);/g, m => entityMap[m as keyof typeof entityMap] ?? m);
 
 /**
  * Parse a very small subset of XML into a JS structure.
@@ -177,7 +175,7 @@ export const uriEscape = (uriStr: string): string => {
  * @returns Escaped URI path
  */
 export const uriResourceEscape = (string: string): string => {
-  return uriEscape(string).replace(/%2F/g, '/');
+  return uriEscape(string).replaceAll('%2F', '/');
 };
 
 export const isListBucketResponse = (value: unknown): value is ListBucketResponse => {

@@ -1,7 +1,7 @@
 'use strict';
-import { it, jest, expect, describe, beforeAll } from '@jest/globals';
+import { it, jest, expect } from '@jest/globals';
 import { S3mini } from '../dist/s3mini.js';
-import { beforeRun, resetBucketBeforeAll } from './_shared.test.js';
+import { beforeRun } from './_shared.test.js';
 
 import * as dotenv from 'dotenv';
 dotenv.config();

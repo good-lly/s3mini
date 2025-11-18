@@ -309,6 +309,9 @@ export const testRunner = bucket => {
     const etag = completeResponse.etag;
     expect(etag).toBeDefined();
     expect(typeof etag).toBe('string');
+    if (etag.length !== 34) {
+      console.warn(`Warning: ETag length is unexpected: ${etag.length} (ETag: ${etag})`);
+    }
     expect(etag.length).toBe(32 + 2); // 32 chars + 2 number of parts flag
 
     const dataArrayBuffer = await s3client.getObjectArrayBuffer(multipartKey);
