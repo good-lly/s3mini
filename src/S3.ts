@@ -11,7 +11,7 @@ import * as U from './utils.js';
  *
  * @class
  * @example
- * const s3 = new CoreS3({
+ * const s3 = new S3mini({
  *   accessKeyId: 'your-access-key',
  *   secretAccessKey: 'your-secret-key',
  *   endpoint: 'https://your-s3-endpoint.com/bucket-name',
@@ -51,7 +51,7 @@ class S3mini {
   readonly requestSizeInBytes: number;
   readonly requestAbortTimeout?: number;
   readonly logger?: IT.Logger;
-  readonly fetch: typeof fetch;
+  readonly _fetch: typeof fetch;
   private signingKeyDate?: string;
   private signingKey?: ArrayBuffer;
 
@@ -74,7 +74,7 @@ class S3mini {
     this.requestSizeInBytes = requestSizeInBytes;
     this.requestAbortTimeout = requestAbortTimeout;
     this.logger = logger;
-    this.fetch = fetch;
+    this._fetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => fetch(input, init);
   }
 
   private _sanitize(obj: unknown): unknown {
@@ -1441,7 +1441,7 @@ class S3mini {
   ): Promise<Response> {
     this._log('info', `Sending ${method} request to ${url}`, `headers: ${JSON.stringify(headers)}`);
     try {
-      const res = await this.fetch(url, {
+      const res = await this._fetch(url, {
         method,
         headers,
         body: ['GET', 'HEAD'].includes(method) ? undefined : body,
