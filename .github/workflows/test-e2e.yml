@@ -3,7 +3,7 @@ name: Test:e2e(all)
 on:
   push:
     branches: [dev]
-  pull_request_target:
+  pull_request:
     branches: [dev]
 env:
   BUCKET_ENV_BACKBLAZE: ${{ secrets.BUCKET_ENV_BACKBLAZE }}
@@ -17,7 +17,7 @@ env:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 0
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -35,7 +35,7 @@ jobs:
         run: npm run build
 
       - name: Run e2e tests
-        uses: nick-fields/retry@v3.0.0
+        uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3.0.2 pin
         with:
           max_attempts: 3
           retry_on: any
