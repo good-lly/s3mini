@@ -193,6 +193,13 @@ if (list) {
   console.log('No objects found in the bucket.');
 }
 
+// list objects in the bucket, 10 at a time using pagination token
+let results = await s3.listObjectsPaged("/", undefined, 10, undefined);
+while (results?.objects?.length) {
+  console.log("List of objects in this page:", results);
+  results = await s3.listObjectsPaged("/", undefined, 10, results.nextContinuationToken);
+}
+
 // delete the object
 const wasDeleted: boolean = await s3client.deleteObject(smallObjectKey);
 // to delete multiple objects, use deleteObjects method
