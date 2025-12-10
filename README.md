@@ -66,7 +66,7 @@ The library supports a subset of S3 operations, focusing on essential features, 
 
 #### Objects ops
 
-- ✅ ListObjectsV2 (listObjects)
+- ✅ ListObjectsV2 (listObjects, listObjectsPaged)
 - ✅ GetObject (getObject, getObjectResponse, getObjectWithETag, getObjectRaw, getObjectArrayBuffer, getObjectJSON)
 - ✅ PutObject (putObject)
 - ✅ DeleteObject (deleteObject)
@@ -194,10 +194,10 @@ if (list) {
 }
 
 // list objects in the bucket, 10 at a time using pagination token
-let results = await s3.listObjectsPaged("/", undefined, 10, undefined);
+let results = await s3.listObjectsPaged('/', undefined, 10, undefined);
 while (results?.objects?.length) {
-  console.log("List of objects in this page:", results);
-  results = await s3.listObjectsPaged("/", undefined, 10, results.nextContinuationToken);
+  console.log('List of objects in this page:', results);
+  results = await s3.listObjectsPaged('/', undefined, 10, results.nextContinuationToken);
 }
 
 // delete the object
