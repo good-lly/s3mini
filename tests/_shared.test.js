@@ -722,12 +722,12 @@ export const testRunner = bucket => {
 
     // 1️⃣ 1000 page - empty next token (explicit pagination - to return first page)
     let firstPage = await s3client.listObjectsPaged('/', prefix, 1_000, undefined); // nextContinuationToken = undefined ⇒ first page
-    expect(firstPage.objects).toBeInstanceOf(firstPage.objects);
+    expect(firstPage.objects).toBeInstanceOf(Array);
     expect(firstPage.objects).toHaveLength(1_000);
 
     // 1️⃣ rest of the objects - with token (explicit pagination - continue from previous page)
     let secondPage = await s3client.listObjectsPaged('/', prefix, 1_000, firstPage.nextContinuationToken); // nextContinuationToken = continue from previous page
-    expect(secondPage.objects).toBeInstanceOf(secondPage.objects);
+    expect(secondPage.objects).toBeInstanceOf(Array);
     expect(secondPage.objects).toHaveLength(totalKeys - 1_000);
 
     // cleanup and test deleteObjects

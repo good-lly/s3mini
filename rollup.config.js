@@ -15,6 +15,7 @@ const terserMin = terser({
     unsafe_math: true,
     pure_getters: true,
     drop_console: true,
+    pure_funcs: ['console.log', 'console.info'],
   },
   mangle: {
     properties: { regex: /^_/ },
