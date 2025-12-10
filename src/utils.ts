@@ -31,7 +31,7 @@ export const hexFromBuffer = (buffer: ArrayBuffer): string => {
     hex[j++] = HEX_CHARS[bytes[i]! >> 4]!;
     hex[j++] = HEX_CHARS[bytes[i]! & 0x0f]!;
   }
-  return String.fromCharCode(...hex);
+  return String.fromCodePoint(...hex);
 };
 
 /**
@@ -154,38 +154,6 @@ export const parseXml = (input: string): XmlValue => {
   // No child tags? — return the text, after entity decode
   return Object.keys(result).length > 0 ? result : unescapeXml(xmlContent.trim());
 };
-
-// export const parseXml = (input: string): XmlValue => {
-//   const xml = input.replace(/<\?xml[^?]*\?>\s*/, '');
-//   const result: XmlMap = {};
-//   let i = 0;
-//   const len = xml.length;
-
-//   while (i < len) {
-//     const tagStart = xml.indexOf('<', i);
-//     if (tagStart === -1 || xml[tagStart + 1] === '/') {
-//       break;
-//     }
-
-//     const tagEnd = xml.indexOf('>', tagStart);
-//     const tag = xml.slice(tagStart + 1, tagEnd);
-//     const closeTag = `</${tag}>`;
-//     const closeIdx = xml.indexOf(closeTag, tagEnd);
-
-//     if (closeIdx === -1) {
-//       i = tagEnd + 1;
-//       continue;
-//     }
-
-//     const inner = xml.slice(tagEnd + 1, closeIdx);
-//     const node = inner.includes('<') ? parseXml(inner) : unescapeXml(inner);
-
-//     const cur = result[tag];
-//     result[tag] = cur === undefined ? node : Array.isArray(cur) ? [...cur, node] : [cur, node];
-//     i = closeIdx + closeTag.length;
-//   }
-//   return Object.keys(result).length ? result : unescapeXml(xml.trim());
-// };
 
 /**
  * Encode a character as a URI percent-encoded hex value
