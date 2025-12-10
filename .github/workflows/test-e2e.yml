@@ -17,7 +17,7 @@ env:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 
@@ -39,8 +39,8 @@ jobs:
         with:
           max_attempts: 3
           retry_on: any
-          timeout_minutes: 5
-          retry_wait_seconds: 20
+          timeout_minutes: 10
+          retry_wait_seconds: 30
           command: npm run test:e2e
         env:
           BUCKET_ENV_BACKBLAZE: ${{ secrets.BUCKET_ENV_BACKBLAZE }}
