@@ -482,6 +482,47 @@ class S3mini {
     return all;
   }
 
+  /**
+   * Lists objects in the bucket with optional filtering and pagination using a continuation token.
+   * This method retrieves objects matching the criteria (paginated like listObjectsV2).
+   * @param {string} [delimiter='/'] - The delimiter to use for grouping objects.
+   * @param {string} [prefix=''] - The prefix to filter objects by.
+   * @param {number} [maxKeys] - The maximum number of keys to return. Uses a default value of 100.
+   * @param {string} [nextContinuationToken] - The nextContinuationToken to continue previous results. If not provided, starts from the beginning.
+   * @param {Record<string, unknown>} [opts={}] - Additional options for the request.
+   * @returns {Promise<{objects: IT.ListObject[] | null; nextContinuationToken?: string } | undefined | null>} A promise that resolves to an array of objects or null if the bucket is empty, along with nextContinuationToken if there are more reccords.
+   * @example
+   * // List all objects
+   * const { objects, nextContinuationToken } = await s3.listObjectsPaged();
+   *
+   * // List 200 objects with prefix
+   * const photos = await s3.listObjectsPaged('/', 'photos/', 200, "token...");
+   */
+  public async listObjectsPaged(
+    delimiter: string = '/',
+    prefix: string = '',
+    maxKeys: number = 100,
+    nextContinuationToken?: string | undefined,
+    opts: Record<string, unknown> = {},
+  ): Promise<{objects: IT.ListObject[] | null; nextContinuationToken?: string} | undefined | null> {
+    this._checkDelimiter(delimiter);
+    this._checkPrefix(prefix);
+    this._checkOpts(opts);
+
+    const keyPath = delimiter === '/' ? delimiter : U.uriEscape(delimiter);
+    let token: string | undefined = nextContinuationToken;
+    const all: IT.ListObject[] = [];
+
+    const batchResult = await this._fetchObjectBatch(keyPath, prefix, maxKeys, token, opts);
+    if (batchResult === null) {
+      return null; // 404 - bucket not found
+    }
+
+    all.push(...batchResult.objects);
+    token = batchResult.continuationToken;
+    return {objects: all, nextContinuationToken: token};
+  }
+
   private async _fetchObjectBatch(
     keyPath: string,
     prefix: string,
