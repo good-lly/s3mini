@@ -617,12 +617,37 @@ class S3mini {
 
   private _extractObjectsFromResponse(response: Record<string, unknown>): IT.ListObject[] {
     const contents = response.Contents || response.contents; // S3 v2 vs v1
+    const commonPrefixes = response.CommonPrefixes || response.commonPrefixes;
 
-    if (!contents) {
-      return [];
+    const objects: IT.ListObject[] = [];
+
+    // Extract regular objects from Contents
+    if (contents) {
+      if (Array.isArray(contents)) {
+        objects.push(...(contents as IT.ListObject[]));
+      } else {
+        objects.push(contents as IT.ListObject);
+      }
     }
 
-    return Array.isArray(contents) ? (contents as IT.ListObject[]) : [contents as IT.ListObject];
+    // Extract directory prefixes from CommonPrefixes
+    if (commonPrefixes) {
+      const prefixList = Array.isArray(commonPrefixes) ? commonPrefixes : [commonPrefixes];
+      for (const item of prefixList) {
+        const prefix = (item as Record<string, unknown>).Prefix || (item as Record<string, unknown>).prefix;
+        if (typeof prefix === 'string') {
+          objects.push({
+            Key: prefix,
+            Size: 0,
+            LastModified: new Date(0),
+            ETag: '',
+            StorageClass: '',
+          } as IT.ListObject);
+        }
+      }
+    }
+
+    return objects;
   }
 
   private _extractContinuationToken(response: Record<string, unknown>): string | undefined {
