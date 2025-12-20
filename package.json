@@ -83,7 +83,7 @@
     "minio": "8.0.6",
     "prettier": "3.7.4",
     "rimraf": "6.1.2",
-    "rollup": "4.54.3",
+    "rollup": "4.54.0",
     "rollup-plugin-dts": "6.3.0",
     "s3mini": "0.8.0",
     "tinybench": "6.0.0",
