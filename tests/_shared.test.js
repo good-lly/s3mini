@@ -284,6 +284,48 @@ export const testRunner = bucket => {
     expect(multipartUpload2).not.toHaveProperty('uploadId');
   });
 
+  it('getObjectRaw with open-ended range (undefined rangeTo)', async () => {
+    const rangeKey = 'open-range-test.bin';
+    const partSize = EIGHT_MB;
+    const totalParts = Math.ceil(large_buffer.length / partSize);
+
+    // Upload multipart object
+    const uploadId = await s3client.getMultipartUploadId(rangeKey);
+    const uploadPromises = [];
+    for (let i = 0; i < totalParts; i++) {
+      const partBuffer = large_buffer.subarray(i * partSize, (i + 1) * partSize);
+      uploadPromises.push(s3client.uploadPart(rangeKey, uploadId, partBuffer, i + 1));
+    }
+    const uploadResponses = await Promise.all(uploadPromises);
+    const parts = uploadResponses.map((response, index) => ({
+      partNumber: index + 1,
+      etag: response.etag,
+    }));
+    await s3client.completeMultipartUpload(rangeKey, uploadId, parts);
+
+    // Test open-ended range: bytes=EIGHT_MB- (from 8MB to end)
+    const rangeStart = EIGHT_MB;
+    const rangeResponse = await s3client.getObjectRaw(rangeKey, false, rangeStart, undefined);
+
+    expect(rangeResponse.ok).toBe(true);
+    expect(rangeResponse.status).toBe(206);
+
+    const rangeData = await rangeResponse.arrayBuffer();
+    const rangeBuffer = Buffer.from(rangeData);
+    const expectedBuffer = large_buffer.subarray(rangeStart);
+
+    expect(rangeBuffer.length).toBe(expectedBuffer.length);
+    expect(rangeBuffer.toString('utf-8')).toBe(expectedBuffer.toString('utf-8'));
+
+    // Verify Content-Range header
+    const contentRange = rangeResponse.headers.get('content-range');
+    expect(contentRange).toBeDefined();
+    expect(contentRange).toMatch(new RegExp(`^bytes ${rangeStart}-\\d+/${large_buffer.length}$`));
+
+    // Cleanup
+    await s3client.deleteObject(rangeKey);
+  });
+
   // multipart upload and download
   it('multipart upload and download', async () => {
     const multipartKey = 'multipart-object.txt';
