@@ -694,6 +694,113 @@ export const testRunner = bucket => {
     expect(await s3client.listObjects('/', prefix)).toEqual([]);
   });
 
+  it('lists objects with delimiter and returns CommonPrefixes', async () => {
+    const basePrefix = `delimiter-test-${Date.now()}/`;
+
+    // Create nested structure:
+    // basePrefix/file1.txt
+    // basePrefix/file2.txt
+    // basePrefix/subdir1/nested1.txt
+    // basePrefix/subdir1/nested2.txt
+    // basePrefix/subdir2/deep/file.txt
+    await Promise.all([
+      s3client.putObject(`${basePrefix}file1.txt`, 'root file 1'),
+      s3client.putObject(`${basePrefix}file2.txt`, 'root file 2'),
+      s3client.putObject(`${basePrefix}subdir1/nested1.txt`, 'nested 1'),
+      s3client.putObject(`${basePrefix}subdir1/nested2.txt`, 'nested 2'),
+      s3client.putObject(`${basePrefix}subdir2/deep/file.txt`, 'deep nested'),
+    ]);
+
+    // List with delimiter - should get files + CommonPrefixes (subdirs)
+    const result = await s3client.listObjects('/', basePrefix, undefined, {
+      delimiter: '/',
+    });
+
+    expect(result).toBeInstanceOf(Array);
+
+    // Should have 2 files + 2 directory prefixes = 4 items
+    expect(result).toHaveLength(4);
+
+    // Separate files from directory prefixes
+    const files = result.filter(o => !o.Key.endsWith('/'));
+    const prefixes = result.filter(o => o.Key.endsWith('/'));
+
+    // Verify files
+    expect(files).toHaveLength(2);
+    const fileKeys = files.map(f => f.Key).sort();
+    expect(fileKeys).toEqual([`${basePrefix}file1.txt`, `${basePrefix}file2.txt`]);
+    // Real files should have non-zero size and valid ETag
+    for (const file of files) {
+      expect(parseInt(String(file.Size))).toBeGreaterThan(0);
+      expect(file.ETag).toBeTruthy();
+    }
+
+    // Verify directory prefixes (CommonPrefixes)
+    expect(prefixes).toHaveLength(2);
+    const prefixKeys = prefixes.map(p => p.Key).sort();
+    expect(prefixKeys).toEqual([`${basePrefix}subdir1/`, `${basePrefix}subdir2/`]);
+    // Synthetic prefix objects should have Size=0 and empty ETag
+    for (const prefix of prefixes) {
+      expect(parseInt(String(prefix.Size))).toBe(0);
+      expect(prefix.ETag).toBe('');
+    }
+
+    // Without delimiter - should get all 5 objects flat
+    const flatResult = await s3client.listObjects('/', basePrefix);
+    expect(flatResult).toHaveLength(5);
+    expect(flatResult.every(o => !o.Key.endsWith('/'))).toBe(true);
+
+    // Test nested listing with delimiter
+    const subdir1Result = await s3client.listObjects('/', `${basePrefix}subdir1/`, undefined, {
+      delimiter: '/',
+    });
+    expect(subdir1Result).toHaveLength(2);
+    expect(subdir1Result.every(o => o.Key.startsWith(`${basePrefix}subdir1/`))).toBe(true);
+    expect(subdir1Result.every(o => parseInt(String(o.Size)) > 0)).toBe(true); // all real files
+
+    // Test deeper nesting
+    const subdir2Result = await s3client.listObjects('/', `${basePrefix}subdir2/`, undefined, {
+      delimiter: '/',
+    });
+    expect(subdir2Result).toHaveLength(1); // just the "deep/" prefix
+    expect(subdir2Result[0].Key).toBe(`${basePrefix}subdir2/deep/`);
+    expect(parseInt(String(subdir2Result[0].Size))).toBe(0);
+
+    // Cleanup
+    const all = await s3client.listObjects('/', basePrefix);
+    await s3client.deleteObjects(all.map(o => o.Key));
+    expect(await s3client.listObjects('/', basePrefix)).toEqual([]);
+  });
+
+  it('listObjectsPaged returns CommonPrefixes with delimiter', async () => {
+    const basePrefix = `paged-delimiter-${Date.now()}/`;
+
+    await Promise.all([
+      s3client.putObject(`${basePrefix}root.txt`, 'root'),
+      s3client.putObject(`${basePrefix}dir1/a.txt`, 'a'),
+      s3client.putObject(`${basePrefix}dir2/b.txt`, 'b'),
+    ]);
+
+    const { objects, nextContinuationToken } = await s3client.listObjectsPaged('/', basePrefix, 100, undefined, {
+      delimiter: '/',
+    });
+
+    expect(objects).toHaveLength(3); // 1 file + 2 prefixes
+
+    const files = objects.filter(o => !o.Key.endsWith('/'));
+    const prefixes = objects.filter(o => o.Key.endsWith('/'));
+
+    expect(files).toHaveLength(1);
+    expect(files[0].Key).toBe(`${basePrefix}root.txt`);
+
+    expect(prefixes).toHaveLength(2);
+    expect(prefixes.map(p => p.Key).sort()).toEqual([`${basePrefix}dir1/`, `${basePrefix}dir2/`]);
+
+    // Cleanup
+    const all = await s3client.listObjects('/', basePrefix);
+    await s3client.deleteObjects(all.map(o => o.Key));
+  });
+
   it('lists objects with pagination', async () => {
     /* ----- test data setup ----- */
     const prefix = `test-prefix-${Date.now()}/`; // isolate this run

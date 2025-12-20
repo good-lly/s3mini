@@ -160,7 +160,7 @@ export const parseXml = (input: string): XmlValue => {
  * @param c Character to encode
  * @returns Percent-encoded character
  */
-const encodeAsHex = (c: string): string => `%${c.charCodeAt(0).toString(16).toUpperCase()}`;
+const encodeAsHex = (c: string): string => `%${(c.codePointAt(0) ?? 0).toString(16).toUpperCase()}`;
 
 /**
  * Escape a URI string using percent encoding
@@ -168,7 +168,7 @@ const encodeAsHex = (c: string): string => `%${c.charCodeAt(0).toString(16).toUp
  * @returns Escaped URI string
  */
 export const uriEscape = (uriStr: string): string => {
-  return encodeURIComponent(uriStr).replace(/[!'()*]/g, encodeAsHex);
+  return encodeURIComponent(uriStr).replaceAll(/[!'()*]/g, encodeAsHex);
 };
 
 /**

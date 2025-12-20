@@ -856,12 +856,16 @@ class S3mini {
     key: string,
     wholeFile = true,
     rangeFrom = 0,
-    rangeTo = this.requestSizeInBytes,
+    rangeTo?: number,
     opts: Record<string, unknown> = {},
     ssecHeaders?: IT.SSECHeaders,
   ): Promise<Response> {
-    const rangeHdr: Record<string, string | number> = wholeFile ? {} : { range: `bytes=${rangeFrom}-${rangeTo - 1}` };
+    let rangeHdr: Record<string, string | number> = {};
 
+    if (!wholeFile) {
+      rangeHdr =
+        rangeTo !== undefined ? { range: `bytes=${rangeFrom}-${rangeTo - 1}` } : { range: `bytes=${rangeFrom}-` };
+    }
     return this._signedRequest('GET', key, {
       query: { ...opts },
       headers: { ...rangeHdr, ...ssecHeaders },
