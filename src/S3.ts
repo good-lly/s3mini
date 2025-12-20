@@ -864,7 +864,7 @@ class S3mini {
 
     if (!wholeFile) {
       rangeHdr =
-        rangeTo !== undefined ? { range: `bytes=${rangeFrom}-${rangeTo - 1}` } : { range: `bytes=${rangeFrom}-` };
+        rangeTo === undefined ? { range: `bytes=${rangeFrom}-` } : { range: `bytes=${rangeFrom}-${rangeTo - 1}` };
     }
     return this._signedRequest('GET', key, {
       query: { ...opts },
