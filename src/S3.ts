@@ -144,15 +144,23 @@ class S3mini {
   }
 
   private _validateConstructorParams(accessKeyId: string, secretAccessKey: string, endpoint: string): void {
-    if (typeof accessKeyId !== 'string' || accessKeyId.trim().length === 0) {
+    if (typeof accessKeyId !== 'string') {
       throw new TypeError(C.ERROR_ACCESS_KEY_REQUIRED);
     }
-    if (typeof secretAccessKey !== 'string' || secretAccessKey.trim().length === 0) {
+    if (typeof secretAccessKey !== 'string') {
       throw new TypeError(C.ERROR_SECRET_KEY_REQUIRED);
     }
     if (typeof endpoint !== 'string' || endpoint.trim().length === 0) {
       throw new TypeError(C.ERROR_ENDPOINT_REQUIRED);
     }
+  }
+
+  /**
+   * Check if credentials are configured (non-empty).
+   * @returns true if both accessKeyId and secretAccessKey are non-empty.
+   */
+  private _hasCredentials(): boolean {
+    return this.#accessKeyId.trim().length > 0 && this.#secretAccessKey.trim().length > 0;
   }
 
   private _ensureValidUrl(raw: string): string {
@@ -274,6 +282,12 @@ class S3mini {
     if (keyPath && keyPath.length > 0) {
       url.pathname =
         url.pathname === '/' ? `/${keyPath.replace(/^\/+/, '')}` : `${url.pathname}/${keyPath.replace(/^\/+/, '')}`;
+    }
+
+    // If no credentials, return unsigned request (for public bucket access)
+    if (!this._hasCredentials()) {
+      headers[C.HEADER_HOST] = url.host;
+      return { url: url.toString(), headers };
     }
 
     const d = new Date();
