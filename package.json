@@ -24,7 +24,9 @@
   "scripts": {
     "tsc": "tsc",
     "typecheck": "tsc --noEmit",
-    "test:e2e": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.config.js --verbose",
+    "test:public": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.public.js --verbose",
+    "test:providers": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.config.js --verbose",
+    "test:e2e": "npm run test:public && npm run test:providers",
     "test:perf": "node ./tests/perf/performance.test.js",
     "lint": "eslint src --ext .ts",
     "format": "prettier -w src",
