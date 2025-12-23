@@ -772,6 +772,21 @@ export const testRunner = bucket => {
     expect(await s3client.listObjects('/', basePrefix)).toEqual([]);
   });
 
+  it('lists objects with spaces in prefix', async () => {
+    const prefix = `test prefix with spaces ${Date.now()}/`;
+
+    await s3client.putObject(`${prefix}file1.txt`, contentString);
+    await s3client.putObject(`${prefix}file2.txt`, contentString);
+
+    // This will fail with SignatureDoesNotMatch if space encoding mismatches
+    const objects = await s3client.listObjects('/', prefix);
+
+    expect(objects).toBeInstanceOf(Array);
+    expect(objects).toHaveLength(2);
+
+    await s3client.deleteObjects(objects.map(o => o.Key));
+  });
+
   it('listObjectsPaged returns CommonPrefixes with delimiter', async () => {
     const basePrefix = `paged-delimiter-${Date.now()}/`;
 

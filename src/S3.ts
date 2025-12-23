@@ -368,11 +368,8 @@ class S3mini {
     if (Object.keys(query).length > 0) {
       withQuery = true; // append query string to signed URL
     }
-    const filteredOptsStrings = Object.fromEntries(
-      Object.entries(filteredOpts).map(([k, v]) => [k, String(v)]),
-    ) as Record<string, string>;
     const finalUrl =
-      withQuery && Object.keys(filteredOpts).length ? `${url}?${new URLSearchParams(filteredOptsStrings)}` : url;
+      withQuery && Object.keys(filteredOpts).length ? `${url}?${this._buildCanonicalQueryString(filteredOpts)}` : url;
     const signedHeadersString = Object.fromEntries(
       Object.entries(signedHeaders).map(([k, v]) => [k, String(v)]),
     ) as Record<string, string>;
