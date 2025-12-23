@@ -51,11 +51,14 @@ interface ListBucketResult {
   keyCount: string;
   contents?: Array<Record<string, unknown>>;
 }
-interface ListBucketError {
-  error: { code: string; message: string };
+export interface ListBucketError {
+  error: {
+    code: string;
+    message: string;
+  };
 }
 
-export type ListBucketResponse = { listBucketResult: ListBucketResult } | { error: ListBucketError };
+export type ListBucketResponse = { listBucketResult: ListBucketResult } | ListBucketError;
 
 export interface ListMultipartUploadSuccess {
   listMultipartUploadsResult: {
