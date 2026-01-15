@@ -264,7 +264,7 @@ class S3mini {
   private _validateUploadPartParams(
     key: string,
     uploadId: string,
-    data: string | IT.MaybeBuffer | ReadableStream | File | Blob,
+    data: IT.DataInput,
     partNumber: number,
     opts: object,
   ): BodyInit {
@@ -997,7 +997,7 @@ class S3mini {
    */
   public async putObject(
     key: string,
-    data: string | IT.MaybeBuffer | ReadableStream | File | Blob,
+    data: string | IT.DataInput | ReadableStream | File | Blob,
     fileType: string = C.DEFAULT_STREAM_CONTENT_TYPE,
     ssecHeaders?: IT.SSECHeaders,
     additionalHeaders?: IT.AWSHeaders,
@@ -1037,7 +1037,7 @@ class S3mini {
    */
   public async putAnyObject(
     key: string,
-    data: string | IT.MaybeBuffer | ReadableStream | File | Blob,
+    data: IT.DataInput,
     fileType: string = C.DEFAULT_STREAM_CONTENT_TYPE,
     ssecHeaders?: IT.SSECHeaders,
     additionalHeaders?: IT.AWSHeaders,
@@ -1056,7 +1056,7 @@ class S3mini {
 
   private async _multipartUpload(
     key: string,
-    data: string | IT.MaybeBuffer | ReadableStream | File | Blob,
+    data: IT.DataInput,
     fileType: string,
     ssecHeaders?: IT.SSECHeaders,
     additionalHeaders?: IT.AWSHeaders,
@@ -1122,7 +1122,7 @@ class S3mini {
   private async _uploadPartsOptimized(
     key: string,
     uploadId: string,
-    data: string | IT.MaybeBuffer | ReadableStream | File | Blob,
+    data: IT.DataInput,
     ssecHeaders?: IT.SSECHeaders,
     additionalHeaders?: IT.AWSHeaders,
     concurrency: number = 4,
@@ -1318,7 +1318,7 @@ class S3mini {
   public async uploadPart(
     key: string,
     uploadId: string,
-    data: string | IT.MaybeBuffer | ReadableStream | File | Blob,
+    data: IT.DataInput,
     partNumber: number,
     opts: Record<string, unknown> = {},
     ssecHeaders?: IT.SSECHeaders,

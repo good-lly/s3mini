@@ -154,12 +154,12 @@ export interface CopyObjectResult {
   lastModified?: Date;
 }
 
-/**
- * Where Buffer is available, e.g. when @types/node is loaded, we want to use it.
- * But it should be excluded in other environments (e.g. Cloudflare) and allow ArrayBuffer and Uint8Array.
- */
-export type MaybeBuffer = typeof globalThis extends { Buffer?: infer B }
+type BinaryData = ArrayBuffer | Uint8Array;
+
+type MaybeBuffer = typeof globalThis extends { Buffer?: infer B }
   ? B extends new (...a: unknown[]) => unknown
-    ? InstanceType<B> | ArrayBuffer | Uint8Array
-    : ArrayBuffer | Uint8Array
-  : ArrayBuffer | Uint8Array;
+    ? InstanceType<B> | BinaryData
+    : BinaryData
+  : BinaryData;
+
+export type DataInput = string | MaybeBuffer | ReadableStream | File | Blob;

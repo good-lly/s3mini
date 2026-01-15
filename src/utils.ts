@@ -1,13 +1,13 @@
 'use strict';
 
-import type { XmlValue, XmlMap, ListBucketResponse, ErrorWithCode, PartData } from './types.js';
+import type { DataInput, XmlValue, XmlMap, ListBucketResponse, ErrorWithCode, PartData } from './types.js';
 import { ERROR_PREFIX } from './consts.js';
 
 const ENCODR = new TextEncoder();
 const chunkSize = 0x8000; // 32KB chunks
 const HEX_CHARS = new Uint8Array([48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 97, 98, 99, 100, 101, 102]);
 
-export const getByteSize = (data: string | ArrayBuffer | Uint8Array | ReadableStream | Blob): number => {
+export const getByteSize = (data: DataInput): number => {
   if (typeof data === 'string') {
     return ENCODR.encode(data).byteLength;
   }
@@ -18,12 +18,12 @@ export const getByteSize = (data: string | ArrayBuffer | Uint8Array | ReadableSt
     return data.size;
   }
   if (data instanceof ReadableStream) {
-    return NaN; // size unknown
+    return Number.NaN; // size unknown
   }
   throw new Error('Unsupported data type');
 };
 
-export const toUint8Array = (data: string | ArrayBuffer | Uint8Array | ReadableStream | Blob): Uint8Array | null => {
+export const toUint8Array = (data: DataInput): Uint8Array | null => {
   if (typeof data === 'string') {
     return ENCODR.encode(data);
   }
@@ -287,10 +287,7 @@ export const runInBatches = async <T = unknown>(
   }
 };
 
-export const generateParts = async function* (
-  data: string | ArrayBuffer | Uint8Array | ReadableStream | Blob,
-  partSize: number,
-): AsyncGenerator<PartData> {
+export const generateParts = async function* (data: DataInput, partSize: number): AsyncGenerator<PartData> {
   const bytes = toUint8Array(data);
 
   if (bytes) {
@@ -386,7 +383,7 @@ export interface PartDescriptor {
  * Pre-calculate all parts for known-size data.
  * Returns array of part descriptors for parallel upload.
  */
-export const calculateParts = (data: string | ArrayBuffer | Uint8Array | Blob, partSize: number): PartDescriptor[] => {
+export const calculateParts = (data: DataInput, partSize: number): PartDescriptor[] => {
   const bytes = toUint8Array(data);
 
   if (bytes) {
