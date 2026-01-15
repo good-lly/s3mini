@@ -15,6 +15,8 @@ import {
   extractErrCode,
   S3NetworkError,
   S3ServiceError,
+  generateParts,
+  toUint8Array,
 } from './utils.js';
 import type * as IT from './types.js';
 
@@ -55,6 +57,7 @@ class S3mini {
    * @param {number} [config.requestAbortTimeout=undefined] - The timeout in milliseconds after which a request should be aborted (careful on streamed requests).
    * @param {Object} [config.logger=null] - A logger object with methods like info, warn, error.
    * @param {typeof fetch} [config.fetch=globalThis.fetch] - Custom fetch implementation to use for HTTP requests.
+   * @param {number} [config.minPartSize=8388608] - The minimum part size for multipart uploads in bytes (default is 8MB).
    * @throws {TypeError} Will throw an error if required parameters are missing or of incorrect type.
    */
   readonly #accessKeyId: string;
@@ -66,6 +69,7 @@ class S3mini {
   readonly requestAbortTimeout?: number;
   readonly logger?: IT.Logger;
   readonly _fetch: typeof fetch;
+  readonly minPartSize: number;
   private signingKeyDate?: string;
   private signingKey?: ArrayBuffer;
 
@@ -78,6 +82,7 @@ class S3mini {
     requestAbortTimeout = undefined,
     logger = undefined,
     fetch = globalThis.fetch,
+    minPartSize = C.MIN_PART_SIZE,
   }: IT.S3Config) {
     this._validateConstructorParams(accessKeyId, secretAccessKey, endpoint);
     this.#accessKeyId = accessKeyId;
@@ -89,6 +94,7 @@ class S3mini {
     this.requestAbortTimeout = requestAbortTimeout;
     this.logger = logger;
     this._fetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => fetch(input, init);
+    this.minPartSize = minPartSize;
   }
 
   private _sanitize(obj: unknown): unknown {
@@ -241,18 +247,24 @@ class S3mini {
     return { filteredOpts, conditionalHeaders };
   }
 
-  private _validateData(data: unknown): BodyInit {
-    if (!((globalThis.Buffer && data instanceof globalThis.Buffer) || typeof data === 'string')) {
-      this._log('error', C.ERROR_DATA_BUFFER_REQUIRED);
-      throw new TypeError(C.ERROR_DATA_BUFFER_REQUIRED);
-    }
-    return data;
-  }
+  // private _validateData(data: unknown): BodyInit {
+  //   if (data instanceof ArrayBuffer) {
+  //     return data;
+  //   }
+  //   if (data instanceof Uint8Array) {
+  //     return data as unknown as BodyInit;
+  //   }
+  //   if ((globalThis.Buffer && data instanceof globalThis.Buffer) || typeof data === 'string') {
+  //     return data as BodyInit;
+  //   }
+  //   this._log('error', C.ERROR_DATA_BUFFER_REQUIRED);
+  //   throw new TypeError(C.ERROR_DATA_BUFFER_REQUIRED);
+  // }
 
   private _validateUploadPartParams(
     key: string,
     uploadId: string,
-    data: IT.MaybeBuffer | string,
+    data: string | IT.MaybeBuffer | ReadableStream | File | Blob,
     partNumber: number,
     opts: object,
   ): BodyInit {
@@ -266,7 +278,7 @@ class S3mini {
       throw new TypeError(`${C.ERROR_PREFIX}partNumber must be a positive integer`);
     }
     this._checkOpts(opts);
-    return this._validateData(data);
+    return data as BodyInit;
   }
 
   private async _sign(
@@ -969,7 +981,7 @@ class S3mini {
   /**
    * Uploads an object to the S3-compatible service.
    * @param {string} key - The key/path where the object will be stored.
-   * @param {string | Buffer} data - The data to upload (string or Buffer).
+   * @param {string | IT.MaybeBuffer | ReadableStream | File | Blob} data - The data to upload (string or Buffer).
    * @param {string} [fileType='application/octet-stream'] - The MIME type of the file.
    * @param {IT.SSECHeaders} [ssecHeaders] - Server-Side Encryption headers, if any.
    * @param {IT.AWSHeaders} [additionalHeaders] - Additional x-amz-* headers specific to this request, if any.
@@ -985,21 +997,252 @@ class S3mini {
    */
   public async putObject(
     key: string,
-    data: string | IT.MaybeBuffer,
+    data: string | IT.MaybeBuffer | ReadableStream | File | Blob,
     fileType: string = C.DEFAULT_STREAM_CONTENT_TYPE,
     ssecHeaders?: IT.SSECHeaders,
     additionalHeaders?: IT.AWSHeaders,
+    contentLength?: number,
   ): Promise<Response> {
+    const size = contentLength ?? getByteSize(data);
     return this._signedRequest('PUT', key, {
-      body: this._validateData(data),
+      body: data as BodyInit,
       headers: {
-        [C.HEADER_CONTENT_LENGTH]: getByteSize(data),
+        ...(size && { [C.HEADER_CONTENT_LENGTH]: size }),
         [C.HEADER_CONTENT_TYPE]: fileType,
         ...additionalHeaders,
         ...ssecHeaders,
       },
       tolerated: [200],
     });
+  }
+
+  /**
+   * Put object that automatically chooses single PUT vs multipart.
+   * Same signature/shape as putObject so callers don't need to change.
+   * @param {string} key - The key/path where the object will be stored.
+   * @param {string | IT.MaybeBuffer | ReadableStream | File | Blob} data - The data to upload (string or Buffer).
+   * @param {string} [fileType='application/octet-stream'] - The MIME type of the file.
+   * @param {IT.SSECHeaders} [ssecHeaders] - Server-Side Encryption headers, if any.
+   * @param {IT.AWSHeaders} [additionalHeaders] - Additional x-amz-* headers specific to this request, if any.
+   * @param {number} [contentLength] - Optional known content length of data.
+   * @returns {Promise<Response | { ok: boolean; status: number; headers: Map<string, string> }>} A promise that resolves to the Response object from the upload request.
+   * @throws {TypeError} If data is not a string or Buffer.
+   * @example
+   * // Upload text file
+   * await s3.putAnyObject('hello.txt', 'Hello, World!', 'text/plain');
+   *
+   * // Upload binary data
+   * const buffer = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+   * await s3.putAnyObject('image.png', buffer, 'image/png');
+   */
+  public async putAnyObject(
+    key: string,
+    data: string | IT.MaybeBuffer | ReadableStream | File | Blob,
+    fileType: string = C.DEFAULT_STREAM_CONTENT_TYPE,
+    ssecHeaders?: IT.SSECHeaders,
+    additionalHeaders?: IT.AWSHeaders,
+    contentLength?: number,
+  ): Promise<Response | { ok: boolean; status: number; headers: Map<string, string> }> {
+    const size = contentLength ?? getByteSize(data);
+
+    // Single PUT for small files
+    if (!Number.isNaN(size) && size <= this.minPartSize) {
+      return this.putObject(key, data, fileType, ssecHeaders, additionalHeaders, contentLength);
+    }
+
+    this._checkKey(key);
+    return this._multipartUpload(key, data, fileType, ssecHeaders, additionalHeaders);
+  }
+
+  private async _multipartUpload(
+    key: string,
+    data: string | IT.MaybeBuffer | ReadableStream | File | Blob,
+    fileType: string,
+    ssecHeaders?: IT.SSECHeaders,
+    additionalHeaders?: IT.AWSHeaders,
+  ): Promise<Response | { ok: boolean; status: number; headers: Map<string, string> }> {
+    const uploadId = await this.getMultipartUploadId(key, fileType, ssecHeaders, additionalHeaders);
+
+    try {
+      const parts = await this._uploadPartsOptimized(key, uploadId, data, ssecHeaders, additionalHeaders);
+      parts.sort((a, b) => a.partNumber - b.partNumber);
+      const result = await this.completeMultipartUpload(key, uploadId, parts);
+      return this._createSuccessResponse(result.etag || '');
+    } catch (err) {
+      await this._safeAbortUpload(key, uploadId);
+      throw err;
+    }
+  }
+
+  private async _uploadKnownSizePartsParallel(
+    key: string,
+    uploadId: string,
+    data: Uint8Array | Blob,
+    ssecHeaders?: IT.SSECHeaders,
+    additionalHeaders?: IT.AWSHeaders,
+    concurrency: number = 4,
+    maxRetries: number = 3,
+  ): Promise<IT.UploadPart[]> {
+    const partSize = this.minPartSize;
+    const totalSize = data instanceof Blob ? data.size : data.byteLength;
+    const totalParts = Math.ceil(totalSize / partSize);
+    const results: IT.UploadPart[] = new Array(totalParts) as IT.UploadPart[];
+    let nextIndex = 0;
+
+    const worker = async (): Promise<void> => {
+      while (true) {
+        const index = nextIndex++;
+        if (index >= totalParts) {
+          return;
+        }
+
+        const start = index * partSize;
+        const end = Math.min(start + partSize, totalSize);
+        const part =
+          data instanceof Blob
+            ? await data.slice(start, end).arrayBuffer() // Must await - R2 needs actual bytes
+            : data.subarray(start, end);
+
+        results[index] = await this._uploadPartWithRetry(
+          key,
+          uploadId,
+          part,
+          index + 1,
+          ssecHeaders,
+          additionalHeaders,
+          maxRetries,
+        );
+      }
+    };
+
+    await Promise.all(Array.from({ length: Math.min(concurrency, totalParts) }, () => worker()));
+    return results;
+  }
+
+  private async _uploadPartsOptimized(
+    key: string,
+    uploadId: string,
+    data: string | IT.MaybeBuffer | ReadableStream | File | Blob,
+    ssecHeaders?: IT.SSECHeaders,
+    additionalHeaders?: IT.AWSHeaders,
+    concurrency: number = 4,
+    maxRetries: number = 3,
+  ): Promise<IT.UploadPart[]> {
+    const bytes = toUint8Array(data);
+    if (bytes) {
+      return this._uploadKnownSizePartsParallel(
+        key,
+        uploadId,
+        bytes,
+        ssecHeaders,
+        additionalHeaders,
+        concurrency,
+        maxRetries,
+      );
+    }
+    if (data instanceof Blob) {
+      return this._uploadKnownSizePartsParallel(
+        key,
+        uploadId,
+        data,
+        ssecHeaders,
+        additionalHeaders,
+        concurrency,
+        maxRetries,
+      );
+    }
+    return this._uploadStreamingParts(
+      key,
+      uploadId,
+      data as ReadableStream,
+      ssecHeaders,
+      additionalHeaders,
+      concurrency,
+      maxRetries,
+    );
+  }
+
+  private async _uploadStreamingParts(
+    key: string,
+    uploadId: string,
+    stream: ReadableStream,
+    ssecHeaders?: IT.SSECHeaders,
+    additionalHeaders?: IT.AWSHeaders,
+    concurrency: number = 4,
+    maxRetries: number = 3,
+  ): Promise<IT.UploadPart[]> {
+    const parts: IT.UploadPart[] = [];
+    const active = new Set<Promise<void>>();
+    let partNumber = 0;
+
+    for await (const partData of generateParts(stream, this.minPartSize)) {
+      const currentPartNumber = ++partNumber;
+
+      while (active.size >= concurrency) {
+        await Promise.race(active);
+      }
+
+      const p = this._uploadPartWithRetry(
+        key,
+        uploadId,
+        partData,
+        currentPartNumber,
+        ssecHeaders,
+        additionalHeaders,
+        maxRetries,
+      ).then(part => {
+        parts.push(part);
+        active.delete(p);
+      });
+
+      active.add(p);
+    }
+
+    await Promise.all(active);
+    return parts;
+  }
+
+  private async _uploadPartWithRetry(
+    key: string,
+    uploadId: string,
+    data: IT.PartData,
+    partNumber: number,
+    ssecHeaders?: IT.SSECHeaders,
+    additionalHeaders?: IT.AWSHeaders,
+    maxRetries: number = 3,
+  ): Promise<IT.UploadPart> {
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await this.uploadPart(key, uploadId, data, partNumber, {}, ssecHeaders, additionalHeaders);
+      } catch (err) {
+        if (attempt === maxRetries) {
+          throw err;
+        }
+        await new Promise(r => setTimeout(r, Math.min(1000 * 2 ** attempt, 10000)));
+      }
+    }
+    throw new Error('Unreachable');
+  }
+
+  private async _safeAbortUpload(key: string, uploadId: string): Promise<void> {
+    try {
+      await this.abortMultipartUpload(key, uploadId);
+    } catch (err) {
+      this._log('warn', `Failed to abort multipart upload: ${String(err)}`);
+    }
+  }
+
+  private _createSuccessResponse(
+    etag: string,
+  ): Response | { ok: boolean; status: number; headers: Map<string, string> } {
+    if (typeof Response !== 'undefined') {
+      const headers = new Headers();
+      if (etag) {
+        headers.set('ETag', etag);
+      }
+      return new Response('', { status: 200, headers });
+    }
+    return { ok: true, status: 200, headers: new Map([['ETag', etag]]) };
   }
 
   /**
@@ -1018,13 +1261,14 @@ class S3mini {
     key: string,
     fileType: string = C.DEFAULT_STREAM_CONTENT_TYPE,
     ssecHeaders?: IT.SSECHeaders,
+    additionalHeaders?: IT.AWSHeaders,
   ): Promise<string> {
     this._checkKey(key);
     if (typeof fileType !== 'string') {
       throw new TypeError(`${C.ERROR_PREFIX}fileType must be a string`);
     }
     const query = { uploads: '' };
-    const headers = { [C.HEADER_CONTENT_TYPE]: fileType, ...ssecHeaders };
+    const headers = { [C.HEADER_CONTENT_TYPE]: fileType, ...ssecHeaders, ...additionalHeaders };
 
     const res = await this._signedRequest('POST', key, {
       query,
@@ -1056,7 +1300,7 @@ class S3mini {
    * Uploads a part in a multipart upload.
    * @param {string} key - The key of the object being uploaded.
    * @param {string} uploadId - The upload ID from getMultipartUploadId.
-   * @param {Buffer | string} data - The data for this part.
+   * @param {string | IT.MaybeBuffer | ReadableStream | File | Blob} data - The data for this part.
    * @param {number} partNumber - The part number (must be between 1 and 10,000).
    * @param {Record<string, unknown>} [opts={}] - Additional options for the request.
    * @param {IT.SSECHeaders} [ssecHeaders] - Server-Side Encryption headers, if any.
@@ -1074,20 +1318,23 @@ class S3mini {
   public async uploadPart(
     key: string,
     uploadId: string,
-    data: IT.MaybeBuffer | string,
+    data: string | IT.MaybeBuffer | ReadableStream | File | Blob,
     partNumber: number,
     opts: Record<string, unknown> = {},
     ssecHeaders?: IT.SSECHeaders,
+    additionalHeaders?: IT.AWSHeaders,
   ): Promise<IT.UploadPart> {
     const body = this._validateUploadPartParams(key, uploadId, data, partNumber, opts);
 
     const query = { uploadId, partNumber, ...opts };
+    const size = getByteSize(data);
     const res = await this._signedRequest('PUT', key, {
       query,
       body,
       headers: {
-        [C.HEADER_CONTENT_LENGTH]: getByteSize(data),
+        ...(size && !Number.isNaN(size) && { [C.HEADER_CONTENT_LENGTH]: size }),
         ...ssecHeaders,
+        ...additionalHeaders,
       },
     });
 

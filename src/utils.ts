@@ -1,21 +1,43 @@
 'use strict';
-import type { XmlValue, XmlMap, ListBucketResponse, ErrorWithCode } from './types.js';
+
+import type { XmlValue, XmlMap, ListBucketResponse, ErrorWithCode, PartData } from './types.js';
+import { ERROR_PREFIX } from './consts.js';
 
 const ENCODR = new TextEncoder();
 const chunkSize = 0x8000; // 32KB chunks
 const HEX_CHARS = new Uint8Array([48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 97, 98, 99, 100, 101, 102]);
 
-export const getByteSize = (data: unknown): number => {
+export const getByteSize = (data: string | ArrayBuffer | Uint8Array | ReadableStream | Blob): number => {
   if (typeof data === 'string') {
     return ENCODR.encode(data).byteLength;
   }
   if (data instanceof ArrayBuffer || data instanceof Uint8Array) {
     return data.byteLength;
   }
-  if (data instanceof Blob) {
+  if (data instanceof Blob || data instanceof File) {
     return data.size;
   }
+  if (data instanceof ReadableStream) {
+    return NaN; // size unknown
+  }
   throw new Error('Unsupported data type');
+};
+
+export const toUint8Array = (data: string | ArrayBuffer | Uint8Array | ReadableStream | Blob): Uint8Array | null => {
+  if (typeof data === 'string') {
+    return ENCODR.encode(data);
+  }
+  if (data instanceof ArrayBuffer) {
+    return new Uint8Array(data);
+  }
+  if (data instanceof Uint8Array) {
+    return data;
+  }
+  // Node Buffer
+  if (typeof Buffer !== 'undefined' && Buffer.isBuffer(data)) {
+    return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+  }
+  return null;
 };
 
 /**
@@ -264,3 +286,146 @@ export const runInBatches = async <T = unknown>(
     }
   }
 };
+
+export const generateParts = async function* (
+  data: string | ArrayBuffer | Uint8Array | ReadableStream | Blob,
+  partSize: number,
+): AsyncGenerator<PartData> {
+  const bytes = toUint8Array(data);
+
+  if (bytes) {
+    yield* generateBufferParts(bytes, partSize);
+  } else if (data instanceof Blob) {
+    yield* generateBlobParts(data, partSize);
+  } else if (data instanceof ReadableStream) {
+    yield* generateStreamParts(data as ReadableStream<Uint8Array>, partSize);
+  } else {
+    throw new TypeError(`${ERROR_PREFIX}Unsupported data type for multipart upload`);
+  }
+};
+
+export function* generateBufferParts(bytes: Uint8Array, partSize: number): Generator<Uint8Array> {
+  for (let offset = 0; offset < bytes.byteLength; offset += partSize) {
+    yield bytes.subarray(offset, Math.min(offset + partSize, bytes.byteLength));
+  }
+}
+
+/**
+ * Zero-copy: yields Blob slices. Data is only read when fetch consumes it.
+ */
+const generateBlobParts = function* (blob: Blob, partSize: number): Generator<Blob> {
+  for (let offset = 0; offset < blob.size; offset += partSize) {
+    yield blob.slice(offset, Math.min(offset + partSize, blob.size));
+  }
+};
+
+const generateStreamParts = async function* (
+  stream: ReadableStream<Uint8Array>,
+  partSize: number,
+): AsyncGenerator<ArrayBuffer> {
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let buffered = 0;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+
+      if (value) {
+        chunks.push(value);
+        buffered += value.byteLength;
+
+        while (buffered >= partSize) {
+          yield extractPart(chunks, partSize);
+          buffered -= partSize;
+        }
+      }
+
+      if (done) {
+        break;
+      }
+    }
+
+    // Yield remaining
+    if (buffered > 0) {
+      yield extractPart(chunks, buffered);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+};
+
+const extractPart = (chunks: Uint8Array[], size: number): ArrayBuffer => {
+  const part = new Uint8Array(size);
+  let offset = 0;
+
+  while (offset < size && chunks.length > 0) {
+    const chunk = chunks[0]!;
+    const needed = size - offset;
+
+    if (chunk.byteLength <= needed) {
+      part.set(chunk, offset);
+      offset += chunk.byteLength;
+      chunks.shift();
+    } else {
+      part.set(chunk.subarray(0, needed), offset);
+      chunks[0] = chunk.subarray(needed);
+      offset = size;
+    }
+  }
+
+  return part.buffer;
+};
+
+export interface PartDescriptor {
+  partNumber: number;
+  data: PartData;
+}
+
+/**
+ * Pre-calculate all parts for known-size data.
+ * Returns array of part descriptors for parallel upload.
+ */
+export const calculateParts = (data: string | ArrayBuffer | Uint8Array | Blob, partSize: number): PartDescriptor[] => {
+  const bytes = toUint8Array(data);
+
+  if (bytes) {
+    return calculateBufferParts(bytes, partSize);
+  }
+
+  if (data instanceof Blob) {
+    return calculateBlobParts(data, partSize);
+  }
+
+  throw new TypeError(`${ERROR_PREFIX}Unsupported data type for part calculation`);
+};
+
+function calculateBufferParts(bytes: Uint8Array, partSize: number): PartDescriptor[] {
+  const totalParts = Math.ceil(bytes.byteLength / partSize);
+  const parts: PartDescriptor[] = new Array(totalParts) as PartDescriptor[];
+
+  for (let i = 0; i < totalParts; i++) {
+    const start = i * partSize;
+    parts[i] = {
+      partNumber: i + 1,
+      data: bytes.subarray(start, Math.min(start + partSize, bytes.byteLength)),
+    };
+  }
+
+  return parts;
+}
+
+function calculateBlobParts(blob: Blob, partSize: number): PartDescriptor[] {
+  const totalParts = Math.ceil(blob.size / partSize);
+  const parts: PartDescriptor[] = new Array(totalParts) as PartDescriptor[];
+
+  for (let i = 0; i < totalParts; i++) {
+    const start = i * partSize;
+    parts[i] = {
+      partNumber: i + 1,
+      data: blob.slice(start, Math.min(start + partSize, blob.size)),
+    };
+  }
+
+  return parts;
+}

@@ -36,6 +36,8 @@ const BUCKET = BUCKET_NAME || 'core-s3-dev-local';
 const SIZES = {
   small: { key: 'bench-1MiB' + now.getTime(), buf: randomBytes(1 * 1024 * 1024) },
   medium: { key: 'bench-8MiB' + now.getTime(), buf: randomBytes(8 * 1024 * 1024) },
+  mediumplus: { key: 'bench-30MiB' + now.getTime(), buf: randomBytes(30 * 1024 * 1024) },
+  large: { key: 'bench-100MiB' + now.getTime(), buf: randomBytes(100 * 1024 * 1024) },
 };
 // large: { key: 'bench-100MiB' + now, buf: randomBytes(100 * 1024 * 1024) },
 
@@ -128,7 +130,7 @@ const makeS3mini = () => {
   return {
     name: 's3mini',
     get: k => client.getObject(k),
-    put: (k, b) => client.putObject(k, b),
+    put: (k, b) => client.putAnyObject(k, b),
     list: () => client.listObjects('/'),
     del: k => client.deleteObject(k),
   };

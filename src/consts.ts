@@ -11,6 +11,7 @@ export const JSON_CONTENT_TYPE = 'application/json';
 export const SENSITIVE_KEYS_REDACTED = new Set(['accesskeyid', 'secretaccesskey', 'sessiontoken', 'password', 'token']);
 export const IFHEADERS = new Set(['if-match', 'if-none-match', 'if-modified-since', 'if-unmodified-since']);
 export const DEFAULT_REQUEST_SIZE_IN_BYTES = 8 * 1024 * 1024;
+export const MIN_PART_SIZE = 8 * 1024 * 1024;
 
 // Headers
 export const HEADER_AMZ_CONTENT_SHA256 = 'x-amz-content-sha256';

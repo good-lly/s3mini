@@ -26,8 +26,8 @@ export default {
   testEnvironment: 'node',
   workerThreads: true,
   maxConcurrency: 5,
-  maxWorkers: '80%',
-  testTimeout: 120_000,
+  maxWorkers: '90%',
+  testTimeout: 220_000,
   globalSetup: '<rootDir>/tests/setup.js',
   globalTeardown: '<rootDir>/tests/teardown.js',
   projects: buckets.map((bucket, index) => ({

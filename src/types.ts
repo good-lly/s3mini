@@ -7,7 +7,10 @@ export interface S3Config {
   requestAbortTimeout?: number;
   logger?: Logger;
   fetch?: typeof fetch;
+  minPartSize?: number;
 }
+
+export type PartData = Uint8Array | Blob | ArrayBuffer;
 
 export interface SSECHeaders {
   'x-amz-server-side-encryption-customer-algorithm': string;
@@ -153,10 +156,10 @@ export interface CopyObjectResult {
 
 /**
  * Where Buffer is available, e.g. when @types/node is loaded, we want to use it.
- * But it should be excluded in other environments (e.g. Cloudflare).
+ * But it should be excluded in other environments (e.g. Cloudflare) and allow ArrayBuffer and Uint8Array.
  */
 export type MaybeBuffer = typeof globalThis extends { Buffer?: infer B }
   ? B extends new (...a: unknown[]) => unknown
-    ? InstanceType<B>
+    ? InstanceType<B> | ArrayBuffer | Uint8Array
     : ArrayBuffer | Uint8Array
   : ArrayBuffer | Uint8Array;

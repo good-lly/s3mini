@@ -1,6 +1,6 @@
 # s3mini | Tiny & fast S3 client for node and edge platforms.
 
-`s3mini` is an ultra-lightweight Typescript client (~18 KB minified, ≈15 % more ops/s) for S3-compatible object storage. It runs on Node, Bun, Cloudflare Workers, and other edge platforms. It has been tested on Cloudflare R2, Backblaze B2, DigitalOcean Spaces, Ceph, Oracle, Garage and MinIO. (No Browser support!)
+`s3mini` is an ultra-lightweight Typescript client (~20 KB minified, ≈15 % more ops/s) for S3-compatible object storage. It runs on Node, Bun, Cloudflare Workers, and other edge platforms. It has been tested on Cloudflare R2, Backblaze B2, DigitalOcean Spaces, Ceph, Oracle, Garage and MinIO. (No Browser support!)
 
 [[github](https://github.com/good-lly/s3mini)]
 [[issues](https://github.com/good-lly/s3mini/issues)]
@@ -8,11 +8,12 @@
 
 ## Features
 
-- 🚀 Light and fast: averages ≈15 % more ops/s and only ~18 KB (minified, not gzipped).
+- 🚀 Light and fast: averages ≈15 % more ops/s and only ~20 KB (minified, not gzipped).
 - 🔧 Zero dependencies; supports AWS SigV4 (no pre-signed requests) and SSE-C headers (tested only on Cloudflare)
 - 🟠 Works on Cloudflare Workers; ideal for edge computing, Node, and Bun (no browser support).
 - 🔑 Only the essential S3 APIs—improved list, put, get, delete, and a few more.
 - 🛠️ Supports multipart uploads.
+- 🎄 Tree-shakeable ES module.
 - 🎯 TypeScript support with type definitions.
 - 📚 Poorly-documented with examples and tests - But widely tested on various S3-compatible services! (Contributions welcome!)
 - 📦 **BYOS3** — _Bring your own S3-compatible bucket_ (tested on Cloudflare R2, Backblaze B2, DigitalOcean Spaces, MinIO, Garage, Micro/Ceph and Oracle Object Storage, Scaleway).
