@@ -1847,6 +1847,84 @@ class S3mini {
       .sort((a, b) => a.localeCompare(b))
       .join('&');
   }
+  /**
+   * Generates a pre-signed URL for direct client access to an S3 object.
+   * The URL embeds authentication in query parameters instead of headers,
+   * allowing unauthenticated HTTP clients to perform the specified operation.
+   *
+   * @param {'GET' | 'PUT'} method - HTTP method ('GET' for download, 'PUT' for upload)
+   * @param {string} key - The object key/path
+   * @param {number} [expiresIn=3600] - URL expiration time in seconds (1–604800)
+   * @param {Record<string, string>} [queryParams={}] - Additional query parameters to sign
+   * @returns {Promise<string>} Pre-signed URL string
+   * @throws {TypeError} If key is empty or expiresIn is out of range
+   * @example
+   * // Download URL valid for 1 hour
+   * const url = await s3.getPresignedUrl('GET', 'photos/vacation.jpg');
+   *
+   * // Upload URL valid for 5 minutes
+   * const url = await s3.getPresignedUrl('PUT', 'uploads/file.bin', 300);
+   *
+   * // Client-side usage (no credentials needed)
+   * await fetch(url, { method: 'PUT', body: data });
+   */
+  public async getPresignedUrl(
+    method: 'GET' | 'PUT',
+    key: string,
+    expiresIn: number = 3600,
+    queryParams: Record<string, string> = {},
+  ): Promise<string> {
+    this._checkKey(key);
+    if (!Number.isFinite(expiresIn) || expiresIn <= 0 || expiresIn > 604800) {
+      throw new TypeError(`${C.ERROR_PREFIX}expiresIn must be between 1 and 604800 seconds`);
+    }
+    return this._presign(method, uriResourceEscape(key), Math.floor(expiresIn), queryParams);
+  }
+
+  private async _presign(
+    method: string,
+    keyPath: string,
+    expiresIn: number,
+    queryParams: Record<string, string>,
+  ): Promise<string> {
+    const url = new URL(this.endpoint);
+    if (keyPath.length > 0) {
+      url.pathname =
+        url.pathname === '/' ? `/${keyPath.replace(/^\/+/, '')}` : `${url.pathname}/${keyPath.replace(/^\/+/, '')}`;
+    }
+
+    const d = new Date();
+    const year = d.getUTCFullYear();
+    const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(d.getUTCDate()).padStart(2, '0');
+    const shortDatetime = `${year}${month}${day}`;
+    const fullDatetime = `${shortDatetime}T${String(d.getUTCHours()).padStart(2, '0')}${String(d.getUTCMinutes()).padStart(2, '0')}${String(d.getUTCSeconds()).padStart(2, '0')}Z`;
+    const credentialScope = `${shortDatetime}/${this.region}/${C.S3_SERVICE}/${C.AWS_REQUEST_TYPE}`;
+
+    const signedHeaders = 'host';
+
+    const allQueryParams: Record<string, string> = {
+      ...queryParams,
+      'X-Amz-Algorithm': C.AWS_ALGORITHM,
+      'X-Amz-Credential': `${this.#accessKeyId}/${credentialScope}`,
+      'X-Amz-Date': fullDatetime,
+      'X-Amz-Expires': String(expiresIn),
+      'X-Amz-SignedHeaders': signedHeaders,
+    };
+
+    const canonicalQueryString = this._buildCanonicalQueryString(allQueryParams);
+    const canonicalRequest = `${method}\n${url.pathname}\n${canonicalQueryString}\nhost:${url.host}\n\n${signedHeaders}\n${C.UNSIGNED_PAYLOAD}`;
+    const stringToSign = `${C.AWS_ALGORITHM}\n${fullDatetime}\n${credentialScope}\n${hexFromBuffer(await sha256(canonicalRequest))}`;
+
+    if (shortDatetime !== this.signingKeyDate || !this.signingKey) {
+      this.signingKeyDate = shortDatetime;
+      this.signingKey = await this._getSignatureKey(shortDatetime);
+    }
+
+    const signature = hexFromBuffer(await hmac(this.signingKey, stringToSign));
+    return `${url.origin}${url.pathname}?${canonicalQueryString}&X-Amz-Signature=${signature}`;
+  }
+
   private async _getSignatureKey(dateStamp: string): Promise<ArrayBuffer> {
     const kDate = await hmac(`AWS4${this.#secretAccessKey}`, dateStamp);
     const kRegion = await hmac(kDate, this.region);

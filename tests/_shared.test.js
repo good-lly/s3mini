@@ -442,6 +442,101 @@ export const testRunner = bucket => {
     await s3client.deleteObject(key2);
   });
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // Pre-signed URL tests
+  // ─────────────────────────────────────────────────────────────────────────
+
+  it('presigned URL: generates valid GET and PUT URLs', async () => {
+    const presignedKey = 'presigned-test.txt';
+
+    const putUrl = await s3client.getPresignedUrl('PUT', presignedKey, 300);
+    expect(typeof putUrl).toBe('string');
+    expect(putUrl).toContain('X-Amz-Signature');
+    expect(putUrl).toContain('X-Amz-Algorithm');
+    expect(putUrl).toContain('X-Amz-Credential');
+    expect(putUrl).toContain('X-Amz-Expires=300');
+    expect(putUrl).toContain('X-Amz-SignedHeaders=host');
+
+    const getUrl = await s3client.getPresignedUrl('GET', presignedKey, 300);
+    expect(typeof getUrl).toBe('string');
+    expect(getUrl).toContain('X-Amz-Signature');
+
+    // GET and PUT signatures must differ (method is part of canonical request)
+    const putSig = new URL(putUrl).searchParams.get('X-Amz-Signature');
+    const getSig = new URL(getUrl).searchParams.get('X-Amz-Signature');
+    expect(putSig).not.toBe(getSig);
+  });
+
+  it('presigned URL: PUT upload and GET download via raw fetch', async () => {
+    const presignedKey = 'presigned-roundtrip.txt';
+    const content = 'Hello from presigned URL!';
+
+    // Upload via presigned PUT URL
+    const putUrl = await s3client.getPresignedUrl('PUT', presignedKey, 300);
+    const putRes = await fetch(putUrl, {
+      method: 'PUT',
+      body: content,
+      headers: { 'Content-Type': 'text/plain' },
+    });
+    expect(putRes.ok).toBe(true);
+
+    // Verify via normal S3 client
+    const data = await s3client.getObject(presignedKey);
+    expect(data).toBe(content);
+
+    // Download via presigned GET URL
+    const getUrl = await s3client.getPresignedUrl('GET', presignedKey, 300);
+    const getRes = await fetch(getUrl);
+    expect(getRes.ok).toBe(true);
+    expect(await getRes.text()).toBe(content);
+
+    // Clean up
+    await s3client.deleteObject(presignedKey);
+  });
+
+  it('presigned URL: works with special characters in key', async () => {
+    const presignedKey = 'presigned/path with spaces/file.txt';
+    const content = 'special chars test';
+
+    const putUrl = await s3client.getPresignedUrl('PUT', presignedKey, 300);
+    const putRes = await fetch(putUrl, { method: 'PUT', body: content });
+    expect(putRes.ok).toBe(true);
+
+    const getUrl = await s3client.getPresignedUrl('GET', presignedKey, 300);
+    const getRes = await fetch(getUrl);
+    expect(getRes.ok).toBe(true);
+    expect(await getRes.text()).toBe(content);
+
+    await s3client.deleteObject(presignedKey);
+  });
+
+  it('presigned URL: binary content via PUT', async () => {
+    const presignedKey = 'presigned-binary.bin';
+    const binaryData = new Uint8Array([0x00, 0x01, 0x02, 0xff, 0xfe, 0xfd]);
+
+    const putUrl = await s3client.getPresignedUrl('PUT', presignedKey, 300);
+    const putRes = await fetch(putUrl, {
+      method: 'PUT',
+      body: binaryData,
+      headers: { 'Content-Type': 'application/octet-stream' },
+    });
+    expect(putRes.ok).toBe(true);
+
+    const getUrl = await s3client.getPresignedUrl('GET', presignedKey, 300);
+    const getRes = await fetch(getUrl);
+    expect(getRes.ok).toBe(true);
+    const downloaded = new Uint8Array(await getRes.arrayBuffer());
+    expect(downloaded).toEqual(binaryData);
+
+    await s3client.deleteObject(presignedKey);
+  });
+
+  it('presigned URL: validation errors', async () => {
+    await expect(s3client.getPresignedUrl('GET', '')).rejects.toThrow();
+    await expect(s3client.getPresignedUrl('GET', 'key', 0)).rejects.toThrow();
+    await expect(s3client.getPresignedUrl('GET', 'key', 604801)).rejects.toThrow();
+  });
+
   // list multipart uploads and abort them
   it('list multipart uploads and abort them all', async () => {
     let multipartUpload;
