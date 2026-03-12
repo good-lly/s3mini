@@ -9,7 +9,7 @@
 ## Features
 
 - 🚀 Light and fast: averages ≈15 % more ops/s and only ~20 KB (minified, not gzipped).
-- 🔧 Zero dependencies; supports AWS SigV4 (no pre-signed requests) and SSE-C headers (tested on Cloudflare)
+- 🔧 Zero dependencies; supports AWS SigV4, pre-signed URLs, and SSE-C headers (tested on Cloudflare)
 - 🟠 Works on Cloudflare Workers; ideal for edge computing, Node, and Bun (no browser support).
 - 🔑 Only the essential S3 APIs—improved list, put, get, delete, and a few more.
 - 🛠️ Supports multipart uploads.
@@ -55,6 +55,7 @@ Dev:
 - [Deleting Objects](#deleting-objects)
 - [Copy and Move](#copy-and-move)
 - [Conditional Requests](#conditional-requests)
+- [Pre-signed URLs](#pre-signed-urls)
 - [Server-Side Encryption (SSE-C)](#server-side-encryption-sse-c)
 - [API Reference](#api-reference)
 - [Error Handling](#error-handling)
@@ -477,6 +478,63 @@ const exists = await s3.objectExists('file.txt', {
 
 ---
 
+## Pre-signed URLs
+
+Generate time-limited URLs that allow unauthenticated HTTP clients to upload or download objects directly — no credentials needed on the client side.
+
+```typescript
+// Download URL (valid for 1 hour by default)
+const downloadUrl = await s3.getPresignedUrl('GET', 'photos/vacation.jpg');
+
+// Upload URL (valid for 5 minutes)
+const uploadUrl = await s3.getPresignedUrl('PUT', 'uploads/file.bin', 300);
+```
+
+**Client-side usage (no SDK or credentials required):**
+
+```typescript
+// Upload via pre-signed URL
+await fetch(uploadUrl, {
+  method: 'PUT',
+  body: fileData,
+  headers: { 'Content-Type': 'image/jpeg' },
+});
+
+// Download via pre-signed URL
+const response = await fetch(downloadUrl);
+const data = await response.arrayBuffer();
+```
+
+**Custom response headers:**
+
+```typescript
+// Force download with a specific filename
+const url = await s3.getPresignedUrl('GET', 'report.pdf', 3600, {
+  'response-content-disposition': 'attachment; filename="report.pdf"',
+  'response-content-type': 'application/pdf',
+});
+```
+
+**Method signature:**
+
+```typescript
+getPresignedUrl(
+  method: 'GET' | 'PUT',
+  key: string,
+  expiresIn?: number,           // Default: 3600 (1 hour), max: 604800 (7 days)
+  queryParams?: Record<string, string>,
+): Promise<string>
+```
+
+**Notes:**
+
+- `expiresIn` must be between 1 and 604800 seconds (7 days); non-integer values are floored.
+- Works with both virtual-hosted-style and path-style endpoints.
+- Special characters and unicode in keys are handled automatically.
+- Throws `TypeError` for empty keys or out-of-range `expiresIn`.
+
+---
+
 ## Server-Side Encryption (SSE-C)
 
 Customer-provided encryption keys (tested on Cloudflare R2):
@@ -545,6 +603,7 @@ await s3.copyObject('secret.dat', 'backup/secret.dat', {
 | `getContentLength(key, ssec?)`                                     | `Promise<number>`                           | Get size in bytes       |
 | `copyObject(source, dest, opts?)`                                  | `Promise<CopyObjectResult>`                 | Server-side copy        |
 | `moveObject(source, dest, opts?)`                                  | `Promise<CopyObjectResult>`                 | Copy + delete           |
+| `getPresignedUrl(method, key, expiresIn?, queryParams?)`           | `Promise<string>`                           | Generate pre-signed URL |
 | `getMultipartUploadId(key, type?, ssec?, headers?)`                | `Promise<string>`                           | Init multipart          |
 | `uploadPart(key, uploadId, data, partNum, opts?, ssec?, headers?)` | `Promise<UploadPart>`                       | Upload part             |
 | `completeMultipartUpload(key, uploadId, parts)`                    | `Promise<CompleteResult>`                   | Complete multipart      |
@@ -634,6 +693,7 @@ export default {
 | CompleteMultipartUpload | `completeMultipartUpload()`                                                                                                |
 | AbortMultipartUpload    | `abortMultipartUpload()`                                                                                                   |
 | ListMultipartUploads    | `listMultipartUploads()`                                                                                                   |
+| Pre-signed URLs         | `getPresignedUrl()`                                                                                                        |
 
 ---
 

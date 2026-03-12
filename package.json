@@ -24,6 +24,7 @@
   "scripts": {
     "tsc": "tsc",
     "typecheck": "tsc --noEmit",
+    "test:unit": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testMatch='<rootDir>/tests/presigned-url.test.js' --verbose",
     "test:public": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.public.js --verbose",
     "test:providers": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.config.js --verbose",
     "test:e2e": "npm run test:public && npm run test:providers",

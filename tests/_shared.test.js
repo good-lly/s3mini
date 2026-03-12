@@ -537,6 +537,71 @@ export const testRunner = bucket => {
     await expect(s3client.getPresignedUrl('GET', 'key', 604801)).rejects.toThrow();
   });
 
+  it('presigned URL: overwrite existing object via PUT', async () => {
+    const presignedKey = 'presigned-overwrite.txt';
+    const original = 'original content';
+    const updated = 'updated content';
+
+    // Upload original via SDK
+    await s3client.putObject(presignedKey, original);
+    expect(await s3client.getObject(presignedKey)).toBe(original);
+
+    // Overwrite via presigned PUT
+    const putUrl = await s3client.getPresignedUrl('PUT', presignedKey, 300);
+    const putRes = await fetch(putUrl, { method: 'PUT', body: updated });
+    expect(putRes.ok).toBe(true);
+
+    // Verify overwrite via presigned GET
+    const getUrl = await s3client.getPresignedUrl('GET', presignedKey, 300);
+    const getRes = await fetch(getUrl);
+    expect(getRes.ok).toBe(true);
+    expect(await getRes.text()).toBe(updated);
+
+    await s3client.deleteObject(presignedKey);
+  });
+
+  it('presigned URL: nested deep key path', async () => {
+    const presignedKey = 'presigned/deeply/nested/dir/structure/file.json';
+    const content = JSON.stringify({ ok: true });
+
+    const putUrl = await s3client.getPresignedUrl('PUT', presignedKey, 300);
+    const putRes = await fetch(putUrl, {
+      method: 'PUT',
+      body: content,
+      headers: { 'Content-Type': 'application/json' },
+    });
+    expect(putRes.ok).toBe(true);
+
+    const getUrl = await s3client.getPresignedUrl('GET', presignedKey, 300);
+    const getRes = await fetch(getUrl);
+    expect(getRes.ok).toBe(true);
+    expect(await getRes.text()).toBe(content);
+
+    await s3client.deleteObject(presignedKey);
+  });
+
+  it('presigned URL: larger payload (~256 KB)', async () => {
+    const presignedKey = 'presigned-large.bin';
+    const largePayload = randomBytes(256 * 1024);
+
+    const putUrl = await s3client.getPresignedUrl('PUT', presignedKey, 300);
+    const putRes = await fetch(putUrl, {
+      method: 'PUT',
+      body: largePayload,
+      headers: { 'Content-Type': 'application/octet-stream' },
+    });
+    expect(putRes.ok).toBe(true);
+
+    const getUrl = await s3client.getPresignedUrl('GET', presignedKey, 300);
+    const getRes = await fetch(getUrl);
+    expect(getRes.ok).toBe(true);
+    const downloaded = new Uint8Array(await getRes.arrayBuffer());
+    expect(downloaded.byteLength).toBe(largePayload.byteLength);
+    expect(Buffer.compare(Buffer.from(downloaded), largePayload)).toBe(0);
+
+    await s3client.deleteObject(presignedKey);
+  });
+
   // list multipart uploads and abort them
   it('list multipart uploads and abort them all', async () => {
     let multipartUpload;

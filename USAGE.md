@@ -2,6 +2,7 @@
   - [List Operations](#list-operations)
   - [Object Operations](#object-operations)
   - [Multipart Upload](#multipart-upload)
+  - [Pre-signed URLs](#pre-signed-urls)
   - [Useful Helpers](#useful-helpers)
   - [Error Handling](#error-handling)
   - [Advanced Usage](#advanced-usage)
@@ -218,6 +219,58 @@ const generator = function* (n) {
 };
 // you can feed runInBatches with any async generator or array of promises/async functions
 await runInBatches(generator(5000), OP_CAP, INTERVAL);
+```
+
+### Pre-signed URLs
+
+Generate time-limited URLs for direct client access without credentials.
+
+#### Generate a Download URL
+
+```javascript
+// Default expiration: 1 hour (3600 seconds)
+const downloadUrl = await s3client.getPresignedUrl('GET', 'example.txt');
+console.log(`Download URL: ${downloadUrl}`);
+```
+
+#### Generate an Upload URL
+
+```javascript
+// Expires in 5 minutes
+const uploadUrl = await s3client.getPresignedUrl('PUT', 'uploads/file.bin', 300);
+console.log(`Upload URL: ${uploadUrl}`);
+```
+
+#### Client-Side Upload via Pre-signed URL
+
+```javascript
+const uploadUrl = await s3client.getPresignedUrl('PUT', 'user-upload.jpg', 600);
+
+// No credentials needed — use plain fetch
+const response = await fetch(uploadUrl, {
+  method: 'PUT',
+  body: fileBuffer,
+  headers: { 'Content-Type': 'image/jpeg' },
+});
+console.log(`Upload success: ${response.ok}`);
+```
+
+#### Client-Side Download via Pre-signed URL
+
+```javascript
+const downloadUrl = await s3client.getPresignedUrl('GET', 'user-upload.jpg');
+
+const response = await fetch(downloadUrl);
+const data = await response.arrayBuffer();
+```
+
+#### Custom Response Headers
+
+```javascript
+const url = await s3client.getPresignedUrl('GET', 'report.pdf', 3600, {
+  'response-content-disposition': 'attachment; filename="report.pdf"',
+  'response-content-type': 'application/pdf',
+});
 ```
 
 ## Error Handling
