@@ -1638,4 +1638,56 @@ export const testRunner = bucket => {
     // Verify bucket now empty for this prefix
     expect(await s3client.listObjects('/', prefix)).toEqual([]);
   });
+
+  it('listObjects returns correct types for Size (number) and LastModified (Date)', async () => {
+    const prefix = `type-check-${Date.now()}/`;
+    const content = 'type check content';
+
+    await s3client.putObject(`${prefix}file.txt`, content, 'text/plain');
+
+    const objects = await s3client.listObjects('/', prefix);
+    expect(objects).toBeInstanceOf(Array);
+    expect(objects).toHaveLength(1);
+
+    const obj = objects[0];
+
+    // Size must be a real number, not a string
+    expect(typeof obj.Size).toBe('number');
+    expect(obj.Size).toBe(byteSize(content));
+
+    // LastModified must be a Date instance, not a string
+    expect(obj.LastModified).toBeInstanceOf(Date);
+    expect(obj.LastModified.getTime()).not.toBeNaN();
+    // Should be recent (within last 60 seconds)
+    expect(Date.now() - obj.LastModified.getTime()).toBeLessThan(60_000);
+
+    // ETag should be a non-empty string
+    expect(typeof obj.ETag).toBe('string');
+    expect(obj.ETag.length).toBeGreaterThan(0);
+
+    // Cleanup
+    await s3client.deleteObjects([`${prefix}file.txt`]);
+  });
+
+  it('listObjectsPaged returns correct types for Size and LastModified', async () => {
+    const prefix = `paged-type-check-${Date.now()}/`;
+    const content = 'paged type check';
+
+    await s3client.putObject(`${prefix}a.txt`, content, 'text/plain');
+    await s3client.putObject(`${prefix}b.txt`, content, 'text/plain');
+
+    const result = await s3client.listObjectsPaged('/', prefix, 10);
+    expect(result.objects).toBeInstanceOf(Array);
+    expect(result.objects).toHaveLength(2);
+
+    for (const obj of result.objects) {
+      expect(typeof obj.Size).toBe('number');
+      expect(obj.Size).toBe(byteSize(content));
+      expect(obj.LastModified).toBeInstanceOf(Date);
+      expect(obj.LastModified.getTime()).not.toBeNaN();
+    }
+
+    // Cleanup
+    await s3client.deleteObjects([`${prefix}a.txt`, `${prefix}b.txt`]);
+  });
 };

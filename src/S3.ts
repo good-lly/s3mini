@@ -576,6 +576,7 @@ class S3mini {
     });
 
     if (res.status === 404) {
+      void res.body?.cancel();
       return null;
     }
 
@@ -646,10 +647,16 @@ class S3mini {
 
     // Extract regular objects from Contents
     if (contents) {
-      if (Array.isArray(contents)) {
-        objects.push(...(contents as IT.ListObject[]));
-      } else {
-        objects.push(contents as IT.ListObject);
+      const raw = Array.isArray(contents) ? contents : [contents];
+      for (const item of raw) {
+        const o = item as Record<string, string>;
+        objects.push({
+          Key: o.Key ?? o.key ?? '',
+          Size: Number(o.Size ?? o.size ?? 0),
+          LastModified: new Date(o.LastModified ?? o.lastModified ?? 0),
+          ETag: o.ETag ?? o.etag ?? '',
+          StorageClass: o.StorageClass ?? o.storageClass ?? '',
+        });
       }
     }
 
@@ -754,6 +761,7 @@ class S3mini {
     if (s === 200) {
       return res.text();
     }
+    void res.body?.cancel();
     return null;
   }
 
@@ -778,6 +786,7 @@ class S3mini {
     if (res.status === 200) {
       return res;
     }
+    void res.body?.cancel();
     return null;
   }
 
@@ -802,6 +811,7 @@ class S3mini {
     if (res.status === 200) {
       return res.arrayBuffer();
     }
+    void res.body?.cancel();
     return null;
   }
 
@@ -826,6 +836,7 @@ class S3mini {
     if (res.status === 200) {
       return res.json() as Promise<T>;
     }
+    void res.body?.cancel();
     return null;
   }
 
@@ -850,6 +861,7 @@ class S3mini {
       });
       const s = res.status;
       if (s === 404 || s === 412 || s === 304) {
+        void res.body?.cancel();
         return { etag: null, data: null };
       }
 
@@ -912,7 +924,9 @@ class S3mini {
       return len ? +len : 0;
     } catch (err) {
       this._log('error', `Error getting content length for object ${key}: ${String(err)}`);
-      throw new Error(`${C.ERROR_PREFIX}Error getting content length for object ${key}: ${String(err)}`);
+      throw new Error(`${C.ERROR_PREFIX}Error getting content length for object ${key}: ${String(err)}`, {
+        cause: err,
+      });
     }
   }
 
