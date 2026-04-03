@@ -1869,30 +1869,35 @@ class S3mini {
    * @param {'GET' | 'PUT'} method - HTTP method ('GET' for download, 'PUT' for upload)
    * @param {string} key - The object key/path
    * @param {number} [expiresIn=3600] - URL expiration time in seconds (1–604800)
-   * @param {Record<string, string>} [queryParams={}] - Additional query parameters to sign
+   * @param {Record<string, string>} [queryParams={}] - Additional query parameters to include in the URL
+   * @param {Record<string, string>} [headers={}] - HTTP headers to sign. The consumer of the URL
+   *   MUST send these exact headers with matching values. The `host` header is always signed automatically.
    * @returns {Promise<string>} Pre-signed URL string
    * @throws {TypeError} If key is empty or expiresIn is out of range
    * @example
    * // Download URL valid for 1 hour
    * const url = await s3.getPresignedUrl('GET', 'photos/vacation.jpg');
    *
-   * // Upload URL valid for 5 minutes
-   * const url = await s3.getPresignedUrl('PUT', 'uploads/file.bin', 300);
+   * // Upload URL valid for 5 minutes with signed Content-Type
+   * const url = await s3.getPresignedUrl('PUT', 'uploads/file.bin', 300, {}, {
+   *   'Content-Type': 'application/octet-stream',
+   * });
    *
-   * // Client-side usage (no credentials needed)
-   * await fetch(url, { method: 'PUT', body: data });
+   * // Client-side usage (must include signed headers)
+   * await fetch(url, { method: 'PUT', body: data, headers: { 'Content-Type': 'application/octet-stream' } });
    */
   public async getPresignedUrl(
     method: 'GET' | 'PUT',
     key: string,
     expiresIn: number = 3600,
     queryParams: Record<string, string> = {},
+    headers: Record<string, string> = {},
   ): Promise<string> {
     this._checkKey(key);
     if (!Number.isFinite(expiresIn) || expiresIn <= 0 || expiresIn > 604800) {
       throw new TypeError(`${C.ERROR_PREFIX}expiresIn must be between 1 and 604800 seconds`);
     }
-    return this._presign(method, uriResourceEscape(key), Math.floor(expiresIn), queryParams);
+    return this._presign(method, uriResourceEscape(key), Math.floor(expiresIn), queryParams, headers);
   }
 
   private async _presign(
@@ -1900,6 +1905,7 @@ class S3mini {
     keyPath: string,
     expiresIn: number,
     queryParams: Record<string, string>,
+    headers: Record<string, string>,
   ): Promise<string> {
     const url = new URL(this.endpoint);
     if (keyPath.length > 0) {
@@ -1915,7 +1921,17 @@ class S3mini {
     const fullDatetime = `${shortDatetime}T${String(d.getUTCHours()).padStart(2, '0')}${String(d.getUTCMinutes()).padStart(2, '0')}${String(d.getUTCSeconds()).padStart(2, '0')}Z`;
     const credentialScope = `${shortDatetime}/${this.region}/${C.S3_SERVICE}/${C.AWS_REQUEST_TYPE}`;
 
-    const signedHeaders = 'host';
+    const headerEntries: Array<[string, string]> = [['host', url.host]];
+    for (const [key, value] of Object.entries(headers)) {
+      const lowerKey = key.toLowerCase();
+      if (lowerKey !== 'host') {
+        headerEntries.push([lowerKey, String(value).trim()]);
+      }
+    }
+    headerEntries.sort(([a], [b]) => a.localeCompare(b));
+
+    const canonicalHeaders = headerEntries.map(([k, v]) => `${k}:${v}`).join('\n');
+    const signedHeaders = headerEntries.map(([k]) => k).join(';');
 
     const allQueryParams: Record<string, string> = {
       ...queryParams,
@@ -1927,7 +1943,7 @@ class S3mini {
     };
 
     const canonicalQueryString = this._buildCanonicalQueryString(allQueryParams);
-    const canonicalRequest = `${method}\n${url.pathname}\n${canonicalQueryString}\nhost:${url.host}\n\n${signedHeaders}\n${C.UNSIGNED_PAYLOAD}`;
+    const canonicalRequest = `${method}\n${url.pathname}\n${canonicalQueryString}\n${canonicalHeaders}\n\n${signedHeaders}\n${C.UNSIGNED_PAYLOAD}`;
     const stringToSign = `${C.AWS_ALGORITHM}\n${fullDatetime}\n${credentialScope}\n${hexFromBuffer(await sha256(canonicalRequest))}`;
 
     if (shortDatetime !== this.signingKeyDate || !this.signingKey) {

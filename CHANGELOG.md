@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.9.3] - 2026-04-03
+
+### Fixed
+
+- Presigned URLs now support signing additional HTTP headers via a new optional `headers` parameter in `getPresignedUrl()`. Previously, `X-Amz-SignedHeaders` was hardcoded to `host`, making it impossible to enforce headers like `Content-Type` on presigned PUT uploads.
+
+### Added
+
+- New `headers` parameter (5th, optional) on `getPresignedUrl(method, key, expiresIn, queryParams, headers)`. Signed headers are included in `X-Amz-SignedHeaders` and the canonical request per AWS SigV4 spec. The `host` header is always signed automatically. Fully backward-compatible — omitting `headers` preserves existing behavior.
+
 ## [0.4.0] - 2025-07-01
 
 ### Changed

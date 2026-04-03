@@ -137,3 +137,4 @@ dist
 .yarn/install-state.gz
 .pnp.*
 examples/hono-cf-worker-app/.wrangler
+CLAUDE.md

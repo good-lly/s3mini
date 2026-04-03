@@ -515,6 +515,21 @@ const url = await s3.getPresignedUrl('GET', 'report.pdf', 3600, {
 });
 ```
 
+**Signed headers (enforce headers on the client request):**
+
+```typescript
+// Upload URL that requires Content-Type — client MUST send this exact header
+const url = await s3.getPresignedUrl('PUT', 'uploads/data.json', 300, {}, {
+  'Content-Type': 'application/json',
+});
+
+await fetch(url, {
+  method: 'PUT',
+  body: JSON.stringify({ ok: true }),
+  headers: { 'Content-Type': 'application/json' },
+});
+```
+
 **Method signature:**
 
 ```typescript
@@ -523,6 +538,7 @@ getPresignedUrl(
   key: string,
   expiresIn?: number,           // Default: 3600 (1 hour), max: 604800 (7 days)
   queryParams?: Record<string, string>,
+  headers?: Record<string, string>,  // HTTP headers to sign (e.g. Content-Type)
 ): Promise<string>
 ```
 
@@ -532,6 +548,7 @@ getPresignedUrl(
 - Works with both virtual-hosted-style and path-style endpoints.
 - Special characters and unicode in keys are handled automatically.
 - Throws `TypeError` for empty keys or out-of-range `expiresIn`.
+- When `headers` are provided, they are included in `X-Amz-SignedHeaders` and the signature. The client consuming the URL must send those exact headers with matching values. The `host` header is always signed automatically.
 
 ---
 
@@ -603,7 +620,7 @@ await s3.copyObject('secret.dat', 'backup/secret.dat', {
 | `getContentLength(key, ssec?)`                                     | `Promise<number>`                           | Get size in bytes       |
 | `copyObject(source, dest, opts?)`                                  | `Promise<CopyObjectResult>`                 | Server-side copy        |
 | `moveObject(source, dest, opts?)`                                  | `Promise<CopyObjectResult>`                 | Copy + delete           |
-| `getPresignedUrl(method, key, expiresIn?, queryParams?)`           | `Promise<string>`                           | Generate pre-signed URL |
+| `getPresignedUrl(method, key, expiresIn?, queryParams?, headers?)` | `Promise<string>`                           | Generate pre-signed URL |
 | `getMultipartUploadId(key, type?, ssec?, headers?)`                | `Promise<string>`                           | Init multipart          |
 | `uploadPart(key, uploadId, data, partNum, opts?, ssec?, headers?)` | `Promise<UploadPart>`                       | Upload part             |
 | `completeMultipartUpload(key, uploadId, parts)`                    | `Promise<CompleteResult>`                   | Complete multipart      |

@@ -181,4 +181,90 @@ describe('getPresignedUrl', () => {
     expect(url).not.toContain('Authorization');
     expect(url).not.toContain('x-amz-content-sha256');
   });
+
+  describe('signed headers', () => {
+    it('includes provided headers in X-Amz-SignedHeaders', async () => {
+      const url = await s3.getPresignedUrl('PUT', 'upload.bin', 300, {}, {
+        'Content-Type': 'application/octet-stream',
+      });
+      const parsed = new URL(url);
+      const signedHeaders = parsed.searchParams.get('X-Amz-SignedHeaders');
+      expect(signedHeaders).toContain('content-type');
+      expect(signedHeaders).toContain('host');
+    });
+
+    it('sorts signed headers alphabetically', async () => {
+      const url = await s3.getPresignedUrl('PUT', 'upload.bin', 300, {}, {
+        'x-amz-meta-tag': 'test',
+        'Content-Type': 'text/plain',
+      });
+      const parsed = new URL(url);
+      const signedHeaders = parsed.searchParams.get('X-Amz-SignedHeaders');
+      // content-type < host < x-amz-meta-tag
+      expect(signedHeaders).toBe('content-type;host;x-amz-meta-tag');
+    });
+
+    it('produces different signature when headers are signed vs not', async () => {
+      const urlWithout = await s3.getPresignedUrl('PUT', 'file.txt', 300);
+      const urlWith = await s3.getPresignedUrl('PUT', 'file.txt', 300, {}, {
+        'Content-Type': 'text/plain',
+      });
+      const sigWithout = new URL(urlWithout).searchParams.get('X-Amz-Signature');
+      const sigWith = new URL(urlWith).searchParams.get('X-Amz-Signature');
+      expect(sigWith).not.toBe(sigWithout);
+    });
+
+    it('produces different signature for different header values', async () => {
+      const url1 = await s3.getPresignedUrl('PUT', 'file.txt', 300, {}, {
+        'Content-Type': 'text/plain',
+      });
+      const url2 = await s3.getPresignedUrl('PUT', 'file.txt', 300, {}, {
+        'Content-Type': 'application/json',
+      });
+      const sig1 = new URL(url1).searchParams.get('X-Amz-Signature');
+      const sig2 = new URL(url2).searchParams.get('X-Amz-Signature');
+      expect(sig1).not.toBe(sig2);
+    });
+
+    it('lowercases header names in X-Amz-SignedHeaders', async () => {
+      const url = await s3.getPresignedUrl('PUT', 'file.txt', 300, {}, {
+        'Content-Type': 'text/plain',
+        'X-Amz-Meta-Custom': 'value',
+      });
+      const parsed = new URL(url);
+      const signedHeaders = parsed.searchParams.get('X-Amz-SignedHeaders');
+      expect(signedHeaders).not.toContain('Content-Type');
+      expect(signedHeaders).not.toContain('X-Amz-Meta-Custom');
+      expect(signedHeaders).toContain('content-type');
+      expect(signedHeaders).toContain('x-amz-meta-custom');
+    });
+
+    it('works with only host when no extra headers provided', async () => {
+      const url = await s3.getPresignedUrl('PUT', 'file.txt', 300, {}, {});
+      const parsed = new URL(url);
+      expect(parsed.searchParams.get('X-Amz-SignedHeaders')).toBe('host');
+    });
+
+    it('combines query params and signed headers correctly', async () => {
+      const url = await s3.getPresignedUrl('GET', 'report.pdf', 3600,
+        { 'response-content-type': 'application/pdf' },
+        { 'x-amz-meta-requestor': 'user123' },
+      );
+      const parsed = new URL(url);
+      expect(parsed.searchParams.get('response-content-type')).toBe('application/pdf');
+      expect(parsed.searchParams.get('X-Amz-SignedHeaders')).toBe('host;x-amz-meta-requestor');
+    });
+
+    it('trims header values in signature', async () => {
+      const url1 = await s3.getPresignedUrl('PUT', 'file.txt', 300, {}, {
+        'Content-Type': 'text/plain',
+      });
+      const url2 = await s3.getPresignedUrl('PUT', 'file.txt', 300, {}, {
+        'Content-Type': '  text/plain  ',
+      });
+      const sig1 = new URL(url1).searchParams.get('X-Amz-Signature');
+      const sig2 = new URL(url2).searchParams.get('X-Amz-Signature');
+      expect(sig1).toBe(sig2);
+    });
+  });
 });

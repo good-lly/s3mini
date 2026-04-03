@@ -1,6 +1,6 @@
 {
   "name": "s3mini",
-  "version": "0.9.2",
+  "version": "0.9.3",
   "description": "👶 Tiny & fast S3 client for node and edge computing platforms",
   "homepage": "https://github.com/good-lly/s3mini",
   "bugs": {

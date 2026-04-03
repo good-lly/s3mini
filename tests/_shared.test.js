@@ -602,6 +602,54 @@ export const testRunner = bucket => {
     await s3client.deleteObject(presignedKey);
   });
 
+  it('presigned URL: PUT with signed Content-Type header roundtrip', async () => {
+    const presignedKey = 'presigned-signed-header.txt';
+    const content = 'Hello with signed Content-Type!';
+    const contentType = 'text/plain';
+
+    const putUrl = await s3client.getPresignedUrl('PUT', presignedKey, 300, {}, {
+      'Content-Type': contentType,
+    });
+    const parsed = new URL(putUrl);
+    const signedHeaders = parsed.searchParams.get('X-Amz-SignedHeaders');
+    expect(signedHeaders).toContain('content-type');
+    expect(signedHeaders).toContain('host');
+
+    const putRes = await fetch(putUrl, {
+      method: 'PUT',
+      body: content,
+      headers: { 'Content-Type': contentType },
+    });
+    expect(putRes.ok).toBe(true);
+
+    const data = await s3client.getObject(presignedKey);
+    expect(data).toBe(content);
+
+    const getUrl = await s3client.getPresignedUrl('GET', presignedKey, 300);
+    const getRes = await fetch(getUrl);
+    expect(getRes.ok).toBe(true);
+    expect(await getRes.text()).toBe(content);
+
+    await s3client.deleteObject(presignedKey);
+  });
+
+  it('presigned URL: PUT with signed Content-Type rejects mismatched header', async () => {
+    const presignedKey = 'presigned-mismatch-header.txt';
+    const content = 'Should fail with wrong Content-Type';
+
+    const putUrl = await s3client.getPresignedUrl('PUT', presignedKey, 300, {}, {
+      'Content-Type': 'text/plain',
+    });
+
+    const putRes = await fetch(putUrl, {
+      method: 'PUT',
+      body: content,
+      headers: { 'Content-Type': 'application/json' },
+    });
+    expect(putRes.ok).toBe(false);
+    expect(putRes.status).toBe(403);
+  });
+
   // list multipart uploads and abort them
   it('list multipart uploads and abort them all', async () => {
     let multipartUpload;

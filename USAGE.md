@@ -273,6 +273,23 @@ const url = await s3client.getPresignedUrl('GET', 'report.pdf', 3600, {
 });
 ```
 
+#### Signed Headers
+
+Enforce that the client sends specific HTTP headers when using the pre-signed URL. The server will reject requests where signed headers don't match.
+
+```javascript
+// Upload URL that requires Content-Type — client MUST send this exact header
+const url = await s3client.getPresignedUrl('PUT', 'uploads/data.json', 300, {}, {
+  'Content-Type': 'application/json',
+});
+
+await fetch(url, {
+  method: 'PUT',
+  body: JSON.stringify({ ok: true }),
+  headers: { 'Content-Type': 'application/json' }, // must match signed value
+});
+```
+
 ## Error Handling
 
 The library throws descriptive error messages for invalid parameters and failed operations. Always use try-catch blocks when working with asynchronous operations:
