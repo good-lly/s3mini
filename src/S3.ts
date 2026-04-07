@@ -548,15 +548,20 @@ class S3mini {
 
     const keyPath = delimiter === '/' ? delimiter : uriEscape(delimiter);
     let token: string | undefined = nextContinuationToken;
+    let remaining = maxKeys;
     const all: IT.ListObject[] = [];
 
-    const batchResult = await this._fetchObjectBatch(keyPath, prefix, maxKeys, token, opts);
-    if (batchResult === null) {
-      return null; // 404 - bucket not found
-    }
+    do {
+      const batchResult = await this._fetchObjectBatch(keyPath, prefix, remaining, token, opts);
+      if (batchResult === null) {
+        return null; // 404 - bucket not found
+      }
 
-    all.push(...batchResult.objects);
-    token = batchResult.continuationToken;
+      all.push(...batchResult.objects);
+      remaining -= batchResult.objects.length;
+      token = batchResult.continuationToken;
+    } while (token && remaining > 0);
+
     return { objects: all, nextContinuationToken: token };
   }
 

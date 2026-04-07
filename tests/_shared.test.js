@@ -1620,26 +1620,22 @@ export const testRunner = bucket => {
           }
         };
     };
-    if (providerName === 'backblaze') {
-      // Backblaze-specific: retry failed uploads
-      await runInBatches(generator(totalKeys), 20, 1_000);
+    const batchSize = providerName === 'backblaze' ? 20 : OP_CAP;
+    await runInBatches(generator(totalKeys), batchSize, 1_000);
 
-      // Check what's missing and retry
-      const uploaded = await s3client.listObjects('/', prefix);
-      const missingCount = totalKeys - uploaded.length;
+    // Retry any failed uploads (allSettled may silently drop some)
+    const uploaded = await s3client.listObjects('/', prefix);
+    const missingCount = totalKeys - uploaded.length;
 
-      if (missingCount > 0) {
-        const uploadedKeys = new Set(uploaded.map(o => o.Key));
-        for (let i = 0; i < totalKeys; i++) {
-          const key = `${prefix}object${i}.txt`;
-          if (!uploadedKeys.has(key)) {
-            await s3client.putObject(key, contentString);
-            counter++;
-          }
+    if (missingCount > 0) {
+      const uploadedKeys = new Set(uploaded.map(o => o.Key));
+      for (let i = 0; i < totalKeys; i++) {
+        const key = `${prefix}object${i}.txt`;
+        if (!uploadedKeys.has(key)) {
+          await s3client.putObject(key, contentString);
+          counter++;
         }
       }
-    } else {
-      await runInBatches(generator(totalKeys), OP_CAP, 1_000);
     }
     /* ----- assertions ----- */
     // 1️⃣  Small page (2)
