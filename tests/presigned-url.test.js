@@ -1,5 +1,5 @@
 'use strict';
-import { describe, it, expect } from '@jest/globals';
+
 import { S3mini } from '../dist/s3mini.js';
 
 describe('getPresignedUrl', () => {

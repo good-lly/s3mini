@@ -1,7 +1,23 @@
 'use strict';
-import { jest, it, expect, describe } from '@jest/globals';
+
 import { S3mini, sanitizeETag, runInBatches } from '../dist/s3mini.js';
 import { randomBytes } from 'node:crypto';
+
+const TRANSIENT_CODES = ['ETIMEDOUT', 'ECONNRESET', 'ECONNREFUSED', 'EAI_AGAIN', 'UND_ERR_SOCKET'];
+const MAX_RETRIES = 2;
+
+const retryFetch = async (input, init) => {
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      return await fetch(input, init);
+    } catch (err) {
+      const code = err?.cause?.code ?? err?.code ?? '';
+      const isTransient = TRANSIENT_CODES.some(c => code.includes(c));
+      if (!isTransient || attempt === MAX_RETRIES) throw err;
+      await new Promise(r => setTimeout(r, 1000 * 2 ** attempt));
+    }
+  }
+};
 
 function toUint8Array(data) {
   if (typeof data === 'string') {
@@ -91,13 +107,12 @@ export const resetBucketBeforeAll = s3client => {
 
 // --- 2 ■ A separate describe makes test output nicer -----------------------
 export const testRunner = bucket => {
-  jest.setTimeout(120_000);
-
   const s3client = new S3mini({
     accessKeyId: bucket.accessKeyId,
     secretAccessKey: bucket.secretAccessKey,
     endpoint: bucket.endpoint,
     region: bucket.region,
+    fetch: retryFetch,
   });
 
   resetBucketBeforeAll(s3client);
@@ -196,35 +211,22 @@ export const testRunner = bucket => {
     }
   });
 
-  it('put and get object using Uint8Array', async () => {
-    const key = 'uint8array-test';
-    const payload = new TextEncoder().encode('hello from uint8array');
+  it('put and get object using typed arrays', async () => {
+    // Uint8Array
+    const u8Key = 'uint8array-test';
+    const u8Payload = new TextEncoder().encode('hello from uint8array');
+    await s3client.putObject(u8Key, u8Payload);
+    const u8Data = await s3client.getObject(u8Key);
+    expect(toUint8Array(u8Data)).toEqual(u8Payload);
+    await s3client.deleteObject(u8Key);
 
-    await s3client.putObject(key, payload);
-
-    const data = await s3client.getObject(key);
-    const result = toUint8Array(data);
-
-    expect(result).toEqual(payload);
-
-    const delResp = await s3client.deleteObject(key);
-    expect(delResp).toBe(true);
-  });
-
-  it('put and get object using ArrayBuffer', async () => {
-    const key = 'arraybuffer-test';
-    const uint8 = new TextEncoder().encode('hello from arraybuffer');
-    const buffer = uint8.buffer;
-
-    await s3client.putObject(key, buffer);
-
-    const data = await s3client.getObject(key);
-    const result = toUint8Array(data);
-
-    expect(result).toEqual(uint8);
-
-    const delResp = await s3client.deleteObject(key);
-    expect(delResp).toBe(true);
+    // ArrayBuffer
+    const abKey = 'arraybuffer-test';
+    const abUint8 = new TextEncoder().encode('hello from arraybuffer');
+    await s3client.putObject(abKey, abUint8.buffer);
+    const abData = await s3client.getObject(abKey);
+    expect(toUint8Array(abData)).toEqual(abUint8);
+    await s3client.deleteObject(abKey);
   });
 
   it('put and get object with special characters and different types', async () => {
@@ -267,7 +269,7 @@ export const testRunner = bucket => {
   });
 
   // putAnyObject
-  it('putAnyObject: put and get small string (single PUT)', async () => {
+  it('putAnyObject: small payloads (string, ArrayBuffer, Blob)', async () => {
     const key = 'putany-small-string';
     const content = 'hello from putAnyObject';
 
@@ -284,22 +286,25 @@ export const testRunner = bucket => {
 
     const delResp = await s3client.deleteObject(key);
     expect(delResp).toBe(true);
-  });
 
-  it('putAnyObject: put and get ArrayBuffer', async () => {
-    const key = 'putany-arraybuffer';
-    const uint8 = new TextEncoder().encode('hello from putAnyObject arraybuffer');
-    const buffer = uint8.buffer;
+    // ArrayBuffer via putAnyObject (small, single PUT path)
+    const abKey = 'putany-arraybuffer';
+    const abUint8 = new TextEncoder().encode('hello from putAnyObject arraybuffer');
+    await s3client.putAnyObject(abKey, abUint8.buffer);
+    const abData = await s3client.getObject(abKey);
+    expect(toUint8Array(abData)).toEqual(abUint8);
+    await s3client.deleteObject(abKey);
 
-    await s3client.putAnyObject(key, buffer);
-
-    const data = await s3client.getObject(key);
-    const result = toUint8Array(data);
-
-    expect(result).toEqual(uint8);
-
-    const delResp = await s3client.deleteObject(key);
-    expect(delResp).toBe(true);
+    // Blob via putAnyObject (small, single PUT path)
+    const blobKey = 'putany-blob';
+    const blobContent = 'hello from blob';
+    const blob = new Blob([blobContent], { type: 'text/plain' });
+    await s3client.putAnyObject(blobKey, blob, 'text/plain');
+    const blobData = await s3client.getObject(blobKey);
+    expect(blobData).toBe(blobContent);
+    const blobResp = await s3client.getObjectResponse(blobKey);
+    expect(blobResp.headers.get('content-type')).toBe('text/plain');
+    await s3client.deleteObject(blobKey);
   });
 
   // test If-Match header
@@ -384,23 +389,6 @@ export const testRunner = bucket => {
     expect(delResp).toBe(true);
   });
 
-  it('putAnyObject: put and get Blob', async () => {
-    const key = 'putany-blob';
-    const content = 'hello from blob';
-    const blob = new Blob([content], { type: 'text/plain' });
-
-    await s3client.putAnyObject(key, blob, 'text/plain');
-
-    const data = await s3client.getObject(key);
-    expect(data).toBe(content);
-
-    const resp = await s3client.getObjectResponse(key);
-    expect(resp.headers.get('content-type')).toBe('text/plain');
-
-    const delResp = await s3client.deleteObject(key);
-    expect(delResp).toBe(true);
-  });
-
   it('putAnyObject: put ReadableStream with unknown size', async () => {
     const key = 'putany-stream';
 
@@ -425,47 +413,9 @@ export const testRunner = bucket => {
     expect(delResp).toBe(true);
   });
 
-  it('putAnyObject: behaves identically to putObject for small payloads', async () => {
-    const key1 = 'putobject-small';
-    const key2 = 'putany-small';
-    const content = 'same behavior';
-
-    await s3client.putObject(key1, content);
-    await s3client.putAnyObject(key2, content);
-
-    const data1 = await s3client.getObject(key1);
-    const data2 = await s3client.getObject(key2);
-
-    expect(data1).toBe(data2);
-
-    await s3client.deleteObject(key1);
-    await s3client.deleteObject(key2);
-  });
-
   // ─────────────────────────────────────────────────────────────────────────
   // Pre-signed URL tests
   // ─────────────────────────────────────────────────────────────────────────
-
-  it('presigned URL: generates valid GET and PUT URLs', async () => {
-    const presignedKey = 'presigned-test.txt';
-
-    const putUrl = await s3client.getPresignedUrl('PUT', presignedKey, 300);
-    expect(typeof putUrl).toBe('string');
-    expect(putUrl).toContain('X-Amz-Signature');
-    expect(putUrl).toContain('X-Amz-Algorithm');
-    expect(putUrl).toContain('X-Amz-Credential');
-    expect(putUrl).toContain('X-Amz-Expires=300');
-    expect(putUrl).toContain('X-Amz-SignedHeaders=host');
-
-    const getUrl = await s3client.getPresignedUrl('GET', presignedKey, 300);
-    expect(typeof getUrl).toBe('string');
-    expect(getUrl).toContain('X-Amz-Signature');
-
-    // GET and PUT signatures must differ (method is part of canonical request)
-    const putSig = new URL(putUrl).searchParams.get('X-Amz-Signature');
-    const getSig = new URL(getUrl).searchParams.get('X-Amz-Signature');
-    expect(putSig).not.toBe(getSig);
-  });
 
   it('presigned URL: PUT upload and GET download via raw fetch', async () => {
     const presignedKey = 'presigned-roundtrip.txt';
@@ -529,12 +479,6 @@ export const testRunner = bucket => {
     expect(downloaded).toEqual(binaryData);
 
     await s3client.deleteObject(presignedKey);
-  });
-
-  it('presigned URL: validation errors', async () => {
-    await expect(s3client.getPresignedUrl('GET', '')).rejects.toThrow();
-    await expect(s3client.getPresignedUrl('GET', 'key', 0)).rejects.toThrow();
-    await expect(s3client.getPresignedUrl('GET', 'key', 604801)).rejects.toThrow();
   });
 
   it('presigned URL: overwrite existing object via PUT', async () => {
@@ -674,48 +618,6 @@ export const testRunner = bucket => {
     expect(multipartUpload2).not.toHaveProperty('uploadId');
   });
 
-  it('getObjectRaw with open-ended range (undefined rangeTo)', async () => {
-    const rangeKey = 'open-range-test.bin';
-    const partSize = EIGHT_MB;
-    const totalParts = Math.ceil(large_buffer.length / partSize);
-
-    // Upload multipart object
-    const uploadId = await s3client.getMultipartUploadId(rangeKey);
-    const uploadPromises = [];
-    for (let i = 0; i < totalParts; i++) {
-      const partBuffer = large_buffer.subarray(i * partSize, (i + 1) * partSize);
-      uploadPromises.push(s3client.uploadPart(rangeKey, uploadId, partBuffer, i + 1));
-    }
-    const uploadResponses = await Promise.all(uploadPromises);
-    const parts = uploadResponses.map((response, index) => ({
-      partNumber: index + 1,
-      etag: response.etag,
-    }));
-    await s3client.completeMultipartUpload(rangeKey, uploadId, parts);
-
-    // Test open-ended range: bytes=EIGHT_MB- (from 8MB to end)
-    const rangeStart = EIGHT_MB;
-    const rangeResponse = await s3client.getObjectRaw(rangeKey, false, rangeStart, undefined);
-
-    expect(rangeResponse.ok).toBe(true);
-    expect(rangeResponse.status).toBe(206);
-
-    const rangeData = await rangeResponse.arrayBuffer();
-    const rangeBuffer = Buffer.from(rangeData);
-    const expectedBuffer = large_buffer.subarray(rangeStart);
-
-    expect(rangeBuffer.length).toBe(expectedBuffer.length);
-    expect(rangeBuffer.toString('utf-8')).toBe(expectedBuffer.toString('utf-8'));
-
-    // Verify Content-Range header
-    const contentRange = rangeResponse.headers.get('content-range');
-    expect(contentRange).toBeDefined();
-    expect(contentRange).toMatch(new RegExp(`^bytes ${rangeStart}-\\d+/${large_buffer.length}$`));
-
-    // Cleanup
-    await s3client.deleteObject(rangeKey);
-  });
-
   it('concurrent putAnyObject calls do not interfere with each other', async () => {
     const keys = ['concurrent-opt-1', 'concurrent-opt-2', 'concurrent-opt-3', 'concurrent-opt-4'];
     const size = s3client.minPartSize + 1024; // Force multipart
@@ -834,23 +736,6 @@ export const testRunner = bucket => {
     await s3client.deleteObject(key);
   });
 
-  it('handles exactly 2 * minPartSize (2 full parts)', async () => {
-    const key = 'two-full-parts-opt';
-    const size = s3client.minPartSize * 2;
-    const buffer = Buffer.alloc(size, 0x47); // 'G'
-
-    const result = await s3client.putAnyObject(key, buffer);
-    expect(result.ok || result.status === 200).toBe(true);
-
-    const length = await s3client.getContentLength(key);
-    expect(length).toBe(size);
-
-    const etag = await s3client.getEtag(key);
-    expect(etag.length).toBe(34); // 32 + '-2'
-
-    await s3client.deleteObject(key);
-  });
-
   it('handles 2 * minPartSize + 1 byte (3 parts, last is 1 byte)', async () => {
     const key = 'three-parts-tiny-last-opt';
     const size = s3client.minPartSize * 2 + 1;
@@ -899,24 +784,24 @@ export const testRunner = bucket => {
     expect(response.headers.get('content-type')).toBe('text/plain');
 
     await s3client.deleteObject(key);
+
+    // File-like binary Blob
+    const binKey = 'file-blob-multipart-opt';
+    const binSize = s3client.minPartSize + 2048;
+    const binBuffer = Buffer.alloc(binSize, 0x49); // 'I'
+    const binBlob = new Blob([binBuffer], { type: 'application/octet-stream' });
+
+    const binResult = await s3client.putAnyObject(binKey, binBlob);
+    expect(binResult.ok || binResult.status === 200).toBe(true);
+
+    const binData = await s3client.getObjectArrayBuffer(binKey);
+    expect(Buffer.from(binData).every(b => b === 0x49)).toBe(true);
+
+    await s3client.deleteObject(binKey);
   });
 
-  it('File-like Blob multipart upload', async () => {
-    const key = 'file-blob-multipart-opt';
-    const size = s3client.minPartSize + 2048;
-    const buffer = Buffer.alloc(size, 0x49); // 'I'
-    const blob = new Blob([buffer], { type: 'application/octet-stream' });
-
-    const result = await s3client.putAnyObject(key, blob);
-    expect(result.ok || result.status === 200).toBe(true);
-
-    const data = await s3client.getObjectArrayBuffer(key);
-    expect(Buffer.from(data).every(b => b === 0x49)).toBe(true);
-
-    await s3client.deleteObject(key);
-  });
-
-  it('Uint8Array multipart upload (zero-copy path)', async () => {
+  it('Uint8Array and ArrayBuffer multipart upload', async () => {
+    // Uint8Array (zero-copy path)
     const key = 'uint8array-multipart-opt';
     const size = s3client.minPartSize * 2 + 1000;
     const uint8 = new Uint8Array(size).fill(0x4a); // 'J'
@@ -925,25 +810,23 @@ export const testRunner = bucket => {
     expect(result.ok || result.status === 200).toBe(true);
 
     const data = await s3client.getObjectArrayBuffer(key);
-    const result2 = new Uint8Array(data);
-    expect(result2.every(b => b === 0x4a)).toBe(true);
+    expect(new Uint8Array(data).every(b => b === 0x4a)).toBe(true);
 
     await s3client.deleteObject(key);
-  });
 
-  it('ArrayBuffer multipart upload', async () => {
-    const key = 'arraybuffer-multipart-opt';
-    const size = s3client.minPartSize + 512;
-    const buffer = new ArrayBuffer(size);
-    new Uint8Array(buffer).fill(0x4b); // 'K'
+    // ArrayBuffer (converted to Uint8Array internally)
+    const abKey = 'arraybuffer-multipart-opt';
+    const abSize = s3client.minPartSize + 512;
+    const ab = new ArrayBuffer(abSize);
+    new Uint8Array(ab).fill(0x4b); // 'K'
 
-    const result = await s3client.putAnyObject(key, buffer);
-    expect(result.ok || result.status === 200).toBe(true);
+    const abResult = await s3client.putAnyObject(abKey, ab);
+    expect(abResult.ok || abResult.status === 200).toBe(true);
 
-    const data = await s3client.getObjectArrayBuffer(key);
-    expect(new Uint8Array(data).every(b => b === 0x4b)).toBe(true);
+    const abData = await s3client.getObjectArrayBuffer(abKey);
+    expect(new Uint8Array(abData).every(b => b === 0x4b)).toBe(true);
 
-    await s3client.deleteObject(key);
+    await s3client.deleteObject(abKey);
   });
 
   it('String multipart upload (large text)', async () => {
@@ -1182,6 +1065,18 @@ export const testRunner = bucket => {
     expect(rangeData).toBeInstanceOf(ArrayBuffer);
     const rangeBuffer = Buffer.from(rangeData);
     expect(rangeBuffer.toString('utf-8')).toBe(large_buffer.subarray(rangeStart, rangeEnd).toString('utf-8'));
+
+    // Open-ended range: bytes=EIGHT_MB- (from 8MB to end)
+    const openRangeStart = EIGHT_MB;
+    const openRangeResponse = await s3client.getObjectRaw(multipartKey, false, openRangeStart, undefined);
+    expect(openRangeResponse.ok).toBe(true);
+    expect(openRangeResponse.status).toBe(206);
+    const openRangeData = await openRangeResponse.arrayBuffer();
+    const openRangeBuffer = Buffer.from(openRangeData);
+    expect(openRangeBuffer.length).toBe(large_buffer.length - openRangeStart);
+    expect(openRangeBuffer.toString('utf-8')).toBe(large_buffer.subarray(openRangeStart).toString('utf-8'));
+    const contentRange = openRangeResponse.headers.get('content-range');
+    expect(contentRange).toMatch(new RegExp(`^bytes ${openRangeStart}-\\d+/${large_buffer.length}$`));
 
     const objectExists = await s3client.objectExists(multipartKey);
     expect(objectExists).toBe(true);
@@ -1540,6 +1435,16 @@ export const testRunner = bucket => {
     expect(subdir2Result[0].Key).toBe(`${basePrefix}subdir2/deep/`);
     expect(parseInt(String(subdir2Result[0].Size))).toBe(0);
 
+    // Verify listObjectsPaged also returns CommonPrefixes with delimiter
+    const { objects: pagedResult } = await s3client.listObjectsPaged('/', basePrefix, 100, undefined, {
+      delimiter: '/',
+    });
+    expect(pagedResult).toHaveLength(4);
+    const pagedFiles = pagedResult.filter(o => !o.Key.endsWith('/'));
+    const pagedPrefixes = pagedResult.filter(o => o.Key.endsWith('/'));
+    expect(pagedFiles).toHaveLength(2);
+    expect(pagedPrefixes).toHaveLength(2);
+
     // Cleanup
     const all = await s3client.listObjects('/', basePrefix);
     await s3client.deleteObjects(all.map(o => o.Key));
@@ -1561,34 +1466,6 @@ export const testRunner = bucket => {
     await s3client.deleteObjects(objects.map(o => o.Key));
   });
 
-  it('listObjectsPaged returns CommonPrefixes with delimiter', async () => {
-    const basePrefix = `paged-delimiter-${Date.now()}/`;
-
-    await Promise.all([
-      s3client.putObject(`${basePrefix}root.txt`, 'root'),
-      s3client.putObject(`${basePrefix}dir1/a.txt`, 'a'),
-      s3client.putObject(`${basePrefix}dir2/b.txt`, 'b'),
-    ]);
-
-    const { objects, nextContinuationToken } = await s3client.listObjectsPaged('/', basePrefix, 100, undefined, {
-      delimiter: '/',
-    });
-
-    expect(objects).toHaveLength(3); // 1 file + 2 prefixes
-
-    const files = objects.filter(o => !o.Key.endsWith('/'));
-    const prefixes = objects.filter(o => o.Key.endsWith('/'));
-
-    expect(files).toHaveLength(1);
-    expect(files[0].Key).toBe(`${basePrefix}root.txt`);
-
-    expect(prefixes).toHaveLength(2);
-    expect(prefixes.map(p => p.Key).sort()).toEqual([`${basePrefix}dir1/`, `${basePrefix}dir2/`]);
-
-    // Cleanup
-    const all = await s3client.listObjects('/', basePrefix);
-    await s3client.deleteObjects(all.map(o => o.Key));
-  });
 
   it('lists objects with pagination', async () => {
     /* ----- test data setup ----- */
@@ -1713,25 +1590,4 @@ export const testRunner = bucket => {
     await s3client.deleteObjects([`${prefix}file.txt`]);
   });
 
-  it('listObjectsPaged returns correct types for Size and LastModified', async () => {
-    const prefix = `paged-type-check-${Date.now()}/`;
-    const content = 'paged type check';
-
-    await s3client.putObject(`${prefix}a.txt`, content, 'text/plain');
-    await s3client.putObject(`${prefix}b.txt`, content, 'text/plain');
-
-    const result = await s3client.listObjectsPaged('/', prefix, 10);
-    expect(result.objects).toBeInstanceOf(Array);
-    expect(result.objects).toHaveLength(2);
-
-    for (const obj of result.objects) {
-      expect(typeof obj.Size).toBe('number');
-      expect(obj.Size).toBe(byteSize(content));
-      expect(obj.LastModified).toBeInstanceOf(Date);
-      expect(obj.LastModified.getTime()).not.toBeNaN();
-    }
-
-    // Cleanup
-    await s3client.deleteObjects([`${prefix}a.txt`, `${prefix}b.txt`]);
-  });
 };

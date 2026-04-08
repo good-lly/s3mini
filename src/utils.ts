@@ -3,6 +3,21 @@
 import type { DataInput, XmlValue, XmlMap, ListBucketResponse, ErrorWithCode, PartData } from './types.js';
 import { ERROR_PREFIX } from './consts.js';
 
+export const isBun = typeof navigator !== 'undefined' && navigator.userAgent === 'Bun';
+
+/** Strips the bucket name from a full endpoint URL, returning the base origin for Bun.S3Client. */
+export const extractBaseEndpoint = (endpoint: URL, bucket: string): string => {
+  // Path-style (/bucket/…): just use the origin
+  if (endpoint.pathname.split('/').find(Boolean)) return endpoint.origin;
+  // Virtual-hosted (bucket.host…): strip the bucket subdomain
+  const prefix = bucket + '.';
+  if (endpoint.hostname.startsWith(prefix)) {
+    const base = endpoint.hostname.slice(prefix.length);
+    return `${endpoint.protocol}//${base}${endpoint.port ? ':' + endpoint.port : ''}`;
+  }
+  return endpoint.origin;
+};
+
 const ENCODR = new TextEncoder();
 const chunkSize = 0x8000; // 32KB chunks
 const HEX_CHARS = new Uint8Array([48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 97, 98, 99, 100, 101, 102]);

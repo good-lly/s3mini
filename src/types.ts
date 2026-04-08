@@ -163,3 +163,57 @@ type MaybeBuffer = typeof globalThis extends { Buffer?: infer B }
   : BinaryData;
 
 export type DataInput = string | MaybeBuffer | ReadableStream | File | Blob;
+
+// Bun-native S3 interfaces (zero-cost in non-Bun runtimes)
+export interface NativeS3Stat {
+  size: number;
+  etag: string;
+  lastModified: Date;
+  type: string;
+}
+
+export interface NativeS3File {
+  text(): Promise<string>;
+  json(): Promise<unknown>;
+  arrayBuffer(): Promise<ArrayBuffer>;
+  bytes(): Promise<Uint8Array>;
+  stream(): ReadableStream;
+  slice(start?: number, end?: number): NativeS3File;
+  write(data: string | ArrayBuffer | Uint8Array | Blob | ReadableStream, opts?: { type?: string }): Promise<number>;
+  writer(opts?: { type?: string }): { write(data: unknown): void; flush(): Promise<void>; end(): Promise<void> };
+  delete(): Promise<void>;
+  unlink(): Promise<void>;
+  exists(): Promise<boolean>;
+  stat(): Promise<NativeS3Stat>;
+  presign(opts?: { method?: string; expiresIn?: number; acl?: string; type?: string }): string;
+}
+
+export interface NativeS3ListObject {
+  key: string;
+  lastModified: Date;
+  size: number;
+  etag: string;
+  storageClass?: string;
+}
+
+export interface NativeS3ListResult {
+  contents?: NativeS3ListObject[];
+  commonPrefixes?: { prefix: string }[];
+  isTruncated: boolean;
+  nextContinuationToken?: string;
+}
+
+export interface NativeS3Client {
+  file(key: string): NativeS3File;
+  write(
+    key: string,
+    data: string | ArrayBuffer | Uint8Array | Blob | ReadableStream,
+    opts?: Record<string, unknown>,
+  ): Promise<number>;
+  delete(key: string): Promise<void>;
+  exists(key: string): Promise<boolean>;
+  size(key: string): Promise<number>;
+  stat(key: string): Promise<NativeS3Stat>;
+  presign(key: string, opts?: { method?: string; expiresIn?: number; acl?: string; type?: string }): string;
+  list(opts?: Record<string, unknown> | null, credentials?: Record<string, unknown>): Promise<NativeS3ListResult>;
+}

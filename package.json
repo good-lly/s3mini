@@ -1,6 +1,6 @@
 {
   "name": "s3mini",
-  "version": "0.9.3",
+  "version": "0.9.4",
   "description": "👶 Tiny & fast S3 client for node and edge computing platforms",
   "homepage": "https://github.com/good-lly/s3mini",
   "bugs": {
@@ -23,10 +23,14 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test:unit": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testMatch='<rootDir>/tests/presigned-url.test.js' --verbose",
+    "test:unit": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testMatch='<rootDir>/tests/{presigned-url,extract-bucket-name}.test.js' --verbose",
     "test:public": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.public.js --verbose",
     "test:providers": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.config.js --verbose",
     "test:e2e": "npm run test:public && npm run test:providers",
+    "test:unit:bun": "bun test tests/presigned-url.test.js tests/extract-bucket-name.test.js",
+    "test:public:bun": "bun test tests/anonymous-access.test.js",
+    "test:providers:bun": "bun tests/run-bun.js tests/minio.test.js tests/hetzner.test.js tests/cloudflare.test.js tests/aws.test.js tests/backblaze.test.js tests/digitalocean.test.js tests/garage.test.js tests/oracle.test.js tests/scaleway.test.js tests/ceph.test.js tests/custom-fetch.test.js",
+    "test:e2e:bun": "npm run test:public:bun && npm run test:providers:bun",
     "test:perf": "node ./tests/perf/performance.test.js",
     "lint": "eslint src --ext .ts",
     "format": "prettier -w src",
@@ -69,25 +73,25 @@
   "devDependencies": {
     "@aws-lite/client": "0.23.5",
     "@aws-lite/s3": "0.2.6",
-    "@aws-sdk/client-s3": "3.1014.0",
+    "@aws-sdk/client-s3": "3.1026.0",
     "@eslint/js": "^10.0.1",
     "@rollup/plugin-node-resolve": "16.0.3",
     "@rollup/plugin-terser": "1.0.0",
     "@rollup/plugin-typescript": "12.3.0",
     "console-table-printer": "2.15.0",
-    "dotenv": "17.3.1",
-    "eslint": "10.1.0",
+    "dotenv": "17.4.1",
+    "eslint": "10.2.0",
     "eslint-config-prettier": "^10.1.8",
     "jest": "30.3.0",
     "minio": "8.0.7",
     "prettier": "3.8.1",
     "rimraf": "6.1.3",
-    "rollup": "4.60.0",
+    "rollup": "4.60.1",
     "rollup-plugin-dts": "6.4.1",
-    "s3mini": "0.9.1",
+    "s3mini": "0.9.3",
     "tinybench": "6.0.0",
-    "typescript": "5.9.3",
-    "typescript-eslint": "8.57.1"
+    "typescript": "6.0.2",
+    "typescript-eslint": "8.58.1"
   },
   "overrides": {
     "glob": "13.0.0"

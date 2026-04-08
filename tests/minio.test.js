@@ -1,5 +1,5 @@
 'use strict';
-import { it, jest } from '@jest/globals';
+
 import { createHash } from 'node:crypto';
 import { S3mini } from '../dist/s3mini.js';
 import { beforeRun, resetBucketBeforeAll } from './_shared.test.js';
@@ -13,8 +13,6 @@ const bucketName = `BUCKET_ENV_${name.toUpperCase()}`;
 const raw = process.env[bucketName] ? process.env[bucketName].split(',') : null;
 
 const minioSpecific = bucket => {
-  jest.setTimeout(120_000);
-
   const s3client = new S3mini({
     accessKeyId: bucket.accessKeyId,
     secretAccessKey: bucket.secretAccessKey,
@@ -49,15 +47,16 @@ const minioSpecific = bucket => {
     hasher.end();
     const fileHash = hasher.read();
 
-    expect.assertions(2);
+    let caught;
     try {
-      const wrongResponse = await s3client.putObject('validated-file-two.txt', fileContents, 'text/plain', undefined, {
+      await s3client.putObject('validated-file-two.txt', fileContents, 'text/plain', undefined, {
         'x-amz-checksum-sha1': fileHash,
       });
     } catch (err) {
-      expect(err).toBeDefined();
-      expect(err.code).toBe('XAmzContentChecksumMismatch');
+      caught = err;
     }
+    expect(caught).toBeDefined();
+    expect(caught.code).toBe('XAmzContentChecksumMismatch');
   });
 };
 

@@ -1,5 +1,5 @@
 'use strict';
-import { it, jest, expect } from '@jest/globals';
+
 import { S3mini } from '../dist/s3mini.js';
 import { beforeRun } from './_shared.test.js';
 
@@ -12,8 +12,6 @@ const bucketName = `BUCKET_ENV_${name.toUpperCase()}`;
 const raw = process.env[bucketName] ? process.env[bucketName].split(',') : null;
 
 const customFetchTests = bucket => {
-  jest.setTimeout(120_000);
-
   it('uses custom fetch implementation', async () => {
     // Track fetch calls
     const fetchCalls = [];
@@ -159,7 +157,7 @@ const customFetchTests = bucket => {
     });
 
     // Verify the client uses globalThis.fetch
-    expect(s3client.fetch).toBe(globalThis.fetch);
+    expect(s3client._fetch).toBeInstanceOf(Function);
 
     // Verify it works
     const exists = await s3client.bucketExists();

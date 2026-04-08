@@ -17,6 +17,8 @@ import {
   S3ServiceError,
   generateParts,
   toUint8Array,
+  isBun,
+  extractBaseEndpoint,
 } from './utils.js';
 import type * as IT from './types.js';
 
@@ -70,6 +72,7 @@ class S3mini {
   readonly logger?: IT.Logger;
   readonly _fetch: typeof fetch;
   readonly minPartSize: number;
+  private readonly _bun?: IT.NativeS3Client;
   private signingKeyDate?: string;
   private signingKey?: ArrayBuffer;
 
@@ -95,6 +98,19 @@ class S3mini {
     this.logger = logger;
     this._fetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => fetch(input, init);
     this.minPartSize = minPartSize;
+
+    if (isBun) {
+      const { S3Client } = (
+        globalThis as unknown as { Bun: { S3Client: new (o: Record<string, unknown>) => IT.NativeS3Client } }
+      ).Bun;
+      this._bun = new S3Client({
+        accessKeyId,
+        secretAccessKey,
+        endpoint: extractBaseEndpoint(this.endpoint, this.bucketName),
+        region: this.region,
+        bucket: this.bucketName,
+      });
+    }
   }
 
   private _sanitize(obj: unknown): unknown {
@@ -167,6 +183,18 @@ class S3mini {
    */
   private _hasCredentials(): boolean {
     return this.#accessKeyId.trim().length > 0 && this.#secretAccessKey.trim().length > 0;
+  }
+
+  /** Run a read op via Bun-native S3, returning null on NoSuchKey. */
+  private async _bunRead<T>(key: string, op: (f: IT.NativeS3File) => Promise<T>): Promise<T | null> {
+    try {
+      return await op(this._bun!.file(key));
+    } catch (e) {
+      if ((e as { code?: string })?.code === 'NoSuchKey') {
+        return null;
+      }
+      throw e;
+    }
   }
 
   private _ensureValidUrl(raw: string): string {
@@ -426,37 +454,29 @@ class S3mini {
   private _extractBucketName(): string {
     const url = this.endpoint;
 
-    // First check if bucket is in the pathname (path-style URLs)
-    const pathSegments = url.pathname.split('/').filter(Boolean);
-    if (pathSegments.length > 0) {
-      if (typeof pathSegments[0] === 'string') {
-        return pathSegments[0];
-      }
+    // Path-style: bucket is the first non-empty path segment
+    const firstSegment = url.pathname.split('/').find(Boolean);
+    if (firstSegment) {
+      return firstSegment;
     }
 
-    // Otherwise extract from subdomain (virtual-hosted-style URLs)
-    const hostParts = url.hostname.split('.');
+    // Virtual-hosted style: bucket is the first subdomain label
+    const hostname = url.hostname;
 
-    // Common patterns:
-    // bucket-name.s3.amazonaws.com
-    // bucket-name.s3.region.amazonaws.com
-    // bucket-name.region.digitaloceanspaces.com
-    // bucket-name.region.cdn.digitaloceanspaces.com
-
-    if (hostParts.length >= 3) {
-      // Check if it's a known S3-compatible service
-      const domain = hostParts.slice(-2).join('.');
-      const knownDomains = ['amazonaws.com', 'digitaloceanspaces.com', 'cloudflare.com'];
-
-      if (knownDomains.some(d => domain.includes(d))) {
-        if (typeof hostParts[0] === 'string') {
-          return hostParts[0];
-        }
-      }
+    // IP addresses (v4: digits+dots, v6: contains colons) can't carry a bucket subdomain
+    if (/^\d+\.\d+\.\d+\.\d+$/.test(hostname) || hostname.includes(':')) {
+      return '';
     }
 
-    // Fallback: use the first subdomain
-    return hostParts[0] || '';
+    const labels = hostname.split('.');
+
+    // Need ≥3 labels for virtual-hosted (bucket.service.tld)
+    // Single-label (localhost) or two-label (example.com) have no room for a bucket subdomain
+    if (labels.length < 3) {
+      return '';
+    }
+
+    return labels[0]!;
   }
 
   /**
@@ -493,6 +513,13 @@ class S3mini {
     this._checkDelimiter(delimiter);
     this._checkPrefix(prefix);
     this._checkOpts(opts);
+
+    if (this._bun && delimiter === '/') {
+      const extraKeys = Object.keys(opts).filter(k => k !== 'delimiter');
+      if (extraKeys.length === 0) {
+        return this._bunListAll(prefix, maxKeys, opts.delimiter as string | undefined);
+      }
+    }
 
     const keyPath = delimiter === '/' ? delimiter : uriEscape(delimiter);
     const unlimited = !(maxKeys && maxKeys > 0);
@@ -698,6 +725,84 @@ class S3mini {
       response.nextMarker) as string | undefined;
   }
 
+  private async _bunListAll(
+    prefix: string,
+    maxKeys: number | undefined,
+    delimiter: string | undefined,
+  ): Promise<IT.ListObject[] | null> {
+    const unlimited = !(maxKeys && maxKeys > 0);
+    let remaining = unlimited ? Infinity : maxKeys;
+    let startAfter: string | undefined;
+    const all: IT.ListObject[] = [];
+
+    try {
+      do {
+        const batchSize = Math.min(remaining === Infinity ? 1000 : remaining, 1000);
+        const res = await this._bun!.list({
+          prefix: prefix || undefined,
+          delimiter: delimiter || '/',
+          maxKeys: batchSize,
+          ...(startAfter ? { startAfter } : {}),
+        });
+
+        const mapped = this._bunMapListResult(res);
+        all.push(...mapped);
+
+        if (!unlimited) {
+          remaining -= mapped.length;
+        }
+
+        if (!res.isTruncated || mapped.length === 0) {
+          break;
+        }
+
+        // Use last key as startAfter for next page
+        const lastKey = res.contents?.length ? res.contents[res.contents.length - 1]!.key : undefined;
+        if (!lastKey) {
+          break;
+        }
+        startAfter = lastKey;
+      } while (remaining > 0);
+    } catch (e) {
+      if ((e as { code?: string })?.code === 'NoSuchBucket') {
+        return null;
+      }
+      throw e;
+    }
+
+    return all;
+  }
+
+  private _bunMapListResult(res: IT.NativeS3ListResult): IT.ListObject[] {
+    const objects: IT.ListObject[] = [];
+
+    if (res.contents) {
+      for (const item of res.contents) {
+        objects.push({
+          Key: item.key,
+          Size: item.size,
+          LastModified: item.lastModified instanceof Date ? item.lastModified : new Date(item.lastModified),
+          ETag: item.etag ?? '',
+          StorageClass: item.storageClass ?? '',
+        });
+      }
+    }
+
+    if (res.commonPrefixes) {
+      for (const item of res.commonPrefixes) {
+        objects.push({
+          Key: item.prefix,
+          Size: 0,
+          LastModified: new Date(0),
+          ETag: '',
+          StorageClass: '',
+        } as IT.ListObject);
+      }
+    }
+
+    return objects;
+  }
+
   /**
    * Lists multipart uploads in the bucket.
    * This method sends a request to list multipart uploads in the specified bucket.
@@ -756,7 +861,9 @@ class S3mini {
     opts: Record<string, unknown> = {},
     ssecHeaders?: IT.SSECHeaders,
   ): Promise<string | null> {
-    // if ssecHeaders is set, add it to headers
+    if (this._bun && !ssecHeaders && !Object.keys(opts).length) {
+      return this._bunRead(key, f => f.text());
+    }
     const res = await this._signedRequest('GET', key, {
       query: opts, // use opts.query if it exists, otherwise use an empty object
       tolerated: [200, 404, 412, 304],
@@ -808,6 +915,9 @@ class S3mini {
     opts: Record<string, unknown> = {},
     ssecHeaders?: IT.SSECHeaders,
   ): Promise<ArrayBuffer | null> {
+    if (this._bun && !ssecHeaders && !Object.keys(opts).length) {
+      return this._bunRead(key, f => f.arrayBuffer());
+    }
     const res = await this._signedRequest('GET', key, {
       query: opts,
       tolerated: [200, 404, 412, 304],
@@ -833,6 +943,9 @@ class S3mini {
     opts: Record<string, unknown> = {},
     ssecHeaders?: IT.SSECHeaders,
   ): Promise<T | null> {
+    if (this._bun && !ssecHeaders && !Object.keys(opts).length) {
+      return this._bunRead(key, f => f.json()) as Promise<T | null>;
+    }
     const res = await this._signedRequest('GET', key, {
       query: opts,
       tolerated: [200, 404, 412, 304],
@@ -858,6 +971,18 @@ class S3mini {
     opts: Record<string, unknown> = {},
     ssecHeaders?: IT.SSECHeaders,
   ): Promise<{ etag: string | null; data: ArrayBuffer | null }> {
+    if (this._bun && !ssecHeaders && !Object.keys(opts).length) {
+      try {
+        const f = this._bun.file(key);
+        const [stat, data] = await Promise.all([f.stat(), f.arrayBuffer()]);
+        return { etag: sanitizeETag(stat.etag), data };
+      } catch (e) {
+        if ((e as { code?: string })?.code === 'NoSuchKey') {
+          return { etag: null, data: null };
+        }
+        throw e;
+      }
+    }
     try {
       const res = await this._signedRequest('GET', key, {
         query: opts,
@@ -900,6 +1025,29 @@ class S3mini {
     opts: Record<string, unknown> = {},
     ssecHeaders?: IT.SSECHeaders,
   ): Promise<Response> {
+    if (this._bun && !ssecHeaders && !Object.keys(opts).length) {
+      const f = this._bun.file(key);
+      if (wholeFile) {
+        const buf = await f.arrayBuffer();
+        const stat = await f.stat();
+        return new Response(buf, {
+          status: 200,
+          headers: { 'content-length': String(stat.size), etag: stat.etag, 'content-type': stat.type },
+        });
+      }
+      const sliced = rangeTo === undefined ? f.slice(rangeFrom) : f.slice(rangeFrom, rangeTo);
+      const buf = await sliced.arrayBuffer();
+      const stat = await f.stat();
+      const endByte = rangeTo === undefined ? stat.size - 1 : rangeTo - 1;
+      return new Response(buf, {
+        status: 206,
+        headers: {
+          'content-range': `bytes ${rangeFrom}-${endByte}/${stat.size}`,
+          'content-length': String(buf.byteLength),
+        },
+      });
+    }
+
     let rangeHdr: Record<string, string | number> = {};
 
     if (!wholeFile) {
@@ -922,6 +1070,9 @@ class S3mini {
    */
   public async getContentLength(key: string, ssecHeaders?: IT.SSECHeaders): Promise<number> {
     try {
+      if (this._bun && !ssecHeaders) {
+        return (await this._bun.file(key).stat()).size;
+      }
       const res = await this._signedRequest('HEAD', key, {
         headers: ssecHeaders ? { ...ssecHeaders } : undefined,
       });
@@ -943,6 +1094,9 @@ class S3mini {
    * @returns A promise that resolves to true if the object exists, false if not found, or null if ETag mismatch.
    */
   public async objectExists(key: string, opts: Record<string, unknown> = {}): Promise<IT.ExistResponseCode> {
+    if (this._bun && !Object.keys(opts).length) {
+      return this._bun.file(key).exists();
+    }
     const res = await this._signedRequest('HEAD', key, {
       query: opts,
       tolerated: [200, 404, 412, 304],
@@ -975,6 +1129,15 @@ class S3mini {
     opts: Record<string, unknown> = {},
     ssecHeaders?: IT.SSECHeaders,
   ): Promise<string | null> {
+    if (this._bun && !ssecHeaders && !Object.keys(opts).length) {
+      return this._bunRead(key, async f => {
+        const { etag } = await f.stat();
+        if (!etag) {
+          throw new Error(`${C.ERROR_PREFIX}ETag not found in response headers`);
+        }
+        return sanitizeETag(etag);
+      });
+    }
     const res = await this._signedRequest('HEAD', key, {
       query: opts,
       tolerated: [200, 304, 404, 412],
@@ -1022,6 +1185,12 @@ class S3mini {
     additionalHeaders?: IT.AWSHeaders,
     contentLength?: number,
   ): Promise<Response> {
+    if (this._bun && !ssecHeaders && !additionalHeaders) {
+      const f = this._bun.file(key);
+      await f.write(data as string | ArrayBuffer | Uint8Array | Blob | ReadableStream, { type: fileType });
+      const { etag } = await f.stat();
+      return new Response(null, { status: 200, headers: etag ? { etag } : {} });
+    }
     const size = contentLength ?? getByteSize(data);
     return this._signedRequest('PUT', key, {
       body: data as BodyInit,
@@ -1062,6 +1231,15 @@ class S3mini {
     additionalHeaders?: IT.AWSHeaders,
     contentLength?: number,
   ): Promise<Response | { ok: boolean; status: number; headers: Map<string, string> }> {
+    // Bun handles multipart automatically for large files
+    if (this._bun && !ssecHeaders && !additionalHeaders) {
+      this._checkKey(key);
+      const f = this._bun.file(key);
+      await f.write(data as string | ArrayBuffer | Uint8Array | Blob | ReadableStream, { type: fileType });
+      const { etag } = await f.stat();
+      return this._createSuccessResponse(etag || '');
+    }
+
     const size = contentLength ?? getByteSize(data);
 
     // Single PUT for small files
@@ -1697,6 +1875,10 @@ class S3mini {
    * @returns A promise that resolves to true if the object was deleted successfully, false otherwise.
    */
   public async deleteObject(key: string): Promise<boolean> {
+    if (this._bun) {
+      await this._bun.file(key).delete();
+      return true;
+    }
     const res = await this._signedRequest('DELETE', key, { tolerated: [200, 204] });
     return res.status === 200 || res.status === 204;
   }
@@ -1901,6 +2083,9 @@ class S3mini {
     this._checkKey(key);
     if (!Number.isFinite(expiresIn) || expiresIn <= 0 || expiresIn > 604800) {
       throw new TypeError(`${C.ERROR_PREFIX}expiresIn must be between 1 and 604800 seconds`);
+    }
+    if (this._bun && !Object.keys(queryParams).length && !Object.keys(headers).length) {
+      return this._bun.presign(key, { method, expiresIn: Math.floor(expiresIn) });
     }
     return this._presign(method, uriResourceEscape(key), Math.floor(expiresIn), queryParams, headers);
   }

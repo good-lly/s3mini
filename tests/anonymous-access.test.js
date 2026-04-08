@@ -1,5 +1,5 @@
 'use strict';
-import { it, expect, describe } from '@jest/globals';
+
 import { S3mini } from '../dist/s3mini.js';
 
 /**

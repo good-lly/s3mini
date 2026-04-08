@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.9.4] - 2026-04-08
+
+### Added
+
+- Bun native S3 support via `Bun.S3Client` — automatic fast paths for `getObject`, `getObjectAsBytes`, `getObjectAsJson`, `getObjectWithETag`, `getObjectRaw` (incl. range requests via `slice()`), `putObject`, `putAnyObject`, `deleteObject`, `objectExists`, `getEtag`, `getContentLength`, `getPresignedUrl`, and `listObjects`. All operations transparently fall back to the standard HTTP path when Bun-specific conditions aren't met (e.g. SSE-C headers, extra opts).
+- `isBun` runtime detection and `extractBaseEndpoint` utility for Bun S3 client initialization.
+- Bun test runner (`tests/run-bun.js`) with Docker lifecycle management for provider tests.
+- CI workflow now runs E2E tests on both Node and Bun runtimes.
+- `retryFetch` wrapper in E2E test infrastructure for transient network error resilience (ETIMEDOUT, ECONNRESET).
+
+### Changed
+
+- Rewrote `_extractBucketName()` — cleaner logic, correctly handles IP addresses, virtual-hosted and path-style URLs.
+- Optimized E2E test suite from 54 to 43 tests per provider by removing redundant coverage and merging related tests.
+- Moved all Bun native type definitions (`NativeS3Stat`, `NativeS3File`, `NativeS3ListObject`, `NativeS3ListResult`, `NativeS3Client`) from `S3.ts` to `types.ts`.
+- Migrated test files from `@jest/globals` imports to framework-agnostic globals (compatible with both Jest and Bun test runner).
+
+### Fixed
+
+- Fixed paginated listing for large buckets.
+- Fixed false positive parseXml regex ReDoS scanner report.
+
 ## [0.9.3] - 2026-04-03
 
 ### Fixed
