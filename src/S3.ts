@@ -738,13 +738,7 @@ class S3mini {
     try {
       do {
         const batchSize = Math.min(remaining === Infinity ? 1000 : remaining, 1000);
-        const res = await this._bun!.list({
-          prefix: prefix || undefined,
-          delimiter: delimiter || '/',
-          maxKeys: batchSize,
-          ...(startAfter ? { startAfter } : {}),
-        });
-
+        const res = await this._bunFetchPage(prefix, delimiter, batchSize, startAfter);
         const mapped = this._bunMapListResult(res);
         all.push(...mapped);
 
@@ -752,17 +746,8 @@ class S3mini {
           remaining -= mapped.length;
         }
 
-        if (!res.isTruncated || mapped.length === 0) {
-          break;
-        }
-
-        // Use last key as startAfter for next page
-        const lastKey = res.contents?.length ? res.contents[res.contents.length - 1]!.key : undefined;
-        if (!lastKey) {
-          break;
-        }
-        startAfter = lastKey;
-      } while (remaining > 0);
+        startAfter = this._bunNextCursor(res);
+      } while (startAfter && remaining > 0);
     } catch (e) {
       if ((e as { code?: string })?.code === 'NoSuchBucket') {
         return null;
@@ -771,6 +756,27 @@ class S3mini {
     }
 
     return all;
+  }
+
+  private _bunFetchPage(
+    prefix: string,
+    delimiter: string | undefined,
+    maxKeys: number,
+    startAfter?: string,
+  ): Promise<IT.NativeS3ListResult> {
+    return this._bun!.list({
+      prefix: prefix || undefined,
+      delimiter: delimiter || '/',
+      maxKeys,
+      ...(startAfter ? { startAfter } : {}),
+    });
+  }
+
+  private _bunNextCursor(res: IT.NativeS3ListResult): string | undefined {
+    if (!res.isTruncated) {
+      return undefined;
+    }
+    return res.contents?.length ? res.contents.at(-1)!.key : undefined;
   }
 
   private _bunMapListResult(res: IT.NativeS3ListResult): IT.ListObject[] {
@@ -1884,72 +1890,75 @@ class S3mini {
   }
 
   private async _deleteObjectsProcess(keys: string[]): Promise<boolean[]> {
+    const out = await this._sendDeleteRequest(keys);
+
+    const resultMap = new Map<string, boolean>(keys.map(k => [k, false]));
+    this._markDeletedKeys(out, resultMap);
+    this._logDeleteErrors(out, resultMap);
+
+    return keys.map(key => resultMap.get(key) || false);
+  }
+
+  private async _sendDeleteRequest(keys: string[]): Promise<Record<string, unknown>> {
     const objectsXml = keys.map(key => `<Object><Key>${escapeXml(key)}</Key></Object>`).join('');
     const xmlBody = '<Delete>' + objectsXml + '</Delete>';
-    const query = { delete: '' };
     const sha256base64 = base64FromBuffer(await sha256(xmlBody));
-    const headers = {
-      [C.HEADER_CONTENT_TYPE]: C.XML_CONTENT_TYPE,
-      [C.HEADER_CONTENT_LENGTH]: getByteSize(xmlBody),
-      [C.HEADER_AMZ_CHECKSUM_SHA256]: sha256base64,
-    };
 
     const res = await this._signedRequest('POST', '', {
-      query,
+      query: { delete: '' },
       body: xmlBody,
-      headers,
+      headers: {
+        [C.HEADER_CONTENT_TYPE]: C.XML_CONTENT_TYPE,
+        [C.HEADER_CONTENT_LENGTH]: getByteSize(xmlBody),
+        [C.HEADER_AMZ_CHECKSUM_SHA256]: sha256base64,
+      },
       withQuery: true,
     });
+
     const parsed = parseXml(await res.text()) as Record<string, unknown>;
     if (!parsed || typeof parsed !== 'object') {
       throw new Error(`${C.ERROR_PREFIX}Failed to delete objects: ${JSON.stringify(parsed)}`);
     }
-    const out = (parsed.DeleteResult || parsed.deleteResult || parsed) as Record<string, unknown>;
-    const resultMap = new Map<string, boolean>();
-    for (const key of keys) {
-      resultMap.set(key, false);
-    }
+    return (parsed.DeleteResult || parsed.deleteResult || parsed) as Record<string, unknown>;
+  }
+
+  private _markDeletedKeys(out: Record<string, unknown>, resultMap: Map<string, boolean>): void {
     const deleted = out.deleted || out.Deleted;
-    if (deleted) {
-      const deletedArray = Array.isArray(deleted) ? deleted : [deleted];
-      for (const item of deletedArray) {
-        if (item && typeof item === 'object') {
-          const obj = item as Record<string, unknown>;
-          // Check both key and Key
-          const key = obj.key || obj.Key;
-          if (key && typeof key === 'string') {
-            resultMap.set(key, true);
-          }
+    if (!deleted) {
+      return;
+    }
+
+    const items = Array.isArray(deleted) ? deleted : [deleted];
+    for (const item of items) {
+      if (item && typeof item === 'object') {
+        const key = (item as Record<string, unknown>).key || (item as Record<string, unknown>).Key;
+        if (key && typeof key === 'string') {
+          resultMap.set(key, true);
         }
       }
     }
+  }
 
-    // Handle errors (check both cases)
+  private _logDeleteErrors(out: Record<string, unknown>, resultMap: Map<string, boolean>): void {
     const errors = out.error || out.Error;
-    if (errors) {
-      const errorsArray = Array.isArray(errors) ? errors : [errors];
-      for (const item of errorsArray) {
-        if (item && typeof item === 'object') {
-          const obj = item as Record<string, unknown>;
-          // Check both cases for all properties
-          const key = obj.key || obj.Key;
-          const code = obj.code || obj.Code;
-          const message = obj.message || obj.Message;
+    if (!errors) {
+      return;
+    }
 
-          if (key && typeof key === 'string') {
-            resultMap.set(key, false);
-            // Optionally log the error for debugging
-            this._log('warn', `Failed to delete object: ${key}`, {
-              code: code || 'Unknown',
-              message: message || 'Unknown error',
-            });
-          }
+    const items = Array.isArray(errors) ? errors : [errors];
+    for (const item of items) {
+      if (item && typeof item === 'object') {
+        const obj = item as Record<string, unknown>;
+        const key = obj.key || obj.Key;
+        if (key && typeof key === 'string') {
+          resultMap.set(key, false);
+          this._log('warn', `Failed to delete object: ${key}`, {
+            code: obj.code || obj.Code || 'Unknown',
+            message: obj.message || obj.Message || 'Unknown error',
+          });
         }
       }
     }
-
-    // Return boolean array in the same order as input keys
-    return keys.map(key => resultMap.get(key) || false);
   }
 
   /**

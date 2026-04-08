@@ -8,7 +8,9 @@ export const isBun = typeof navigator !== 'undefined' && navigator.userAgent ===
 /** Strips the bucket name from a full endpoint URL, returning the base origin for Bun.S3Client. */
 export const extractBaseEndpoint = (endpoint: URL, bucket: string): string => {
   // Path-style (/bucket/…): just use the origin
-  if (endpoint.pathname.split('/').find(Boolean)) return endpoint.origin;
+  if (endpoint.pathname.split('/').some(Boolean)) {
+    return endpoint.origin;
+  }
   // Virtual-hosted (bucket.host…): strip the bucket subdomain
   const prefix = bucket + '.';
   if (endpoint.hostname.startsWith(prefix)) {
