@@ -1,4 +1,4 @@
-# s3mini | Tiny & fast S3 client for node and edge platforms.
+# s3mini | Tiny & fast S3 client for node, bun and edge platforms.
 
 `s3mini` is an ultra-lightweight Typescript client (~20 KB minified, ≈15 % more ops/s) for S3-compatible object storage. It runs on Node, Bun, Cloudflare Workers, and other edge platforms. It has been tested on Cloudflare R2, Backblaze B2, DigitalOcean Spaces, Ceph, Oracle, Garage and MinIO. (No Browser support!)
 
