@@ -1,20 +1,11 @@
----
-name: Feature request
-about: Suggest an idea for this project
-title: ''
-labels: ''
-assignees: ''
+# Migrating to Codeberg
 
----
+This repository has moved to [Codeberg](https://codeberg.org/thinking_tools/s3mini).
 
-**Is your feature request related to a problem? Please describe.**
-A clear and concise description of what the problem is. Ex. I'm always frustrated when [...]
+GitHub will no longer receive updates. Please update your remotes:
 
-**Describe the solution you'd like**
-A clear and concise description of what you want to happen.
+`git remote set-url origin https://codeberg.org/thinking_tools/s3mini.git`
+or 
+`git remote set-url origin ssh://git@codeberg.org/thinking_tools/s3mini.git`
 
-**Describe alternatives you've considered**
-A clear and concise description of any alternative solutions or features you've considered.
-
-**Additional context**
-Add any other context or screenshots about the feature request here.
+Issues and PRs should be opened on Codeberg going forward.
