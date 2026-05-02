@@ -29,7 +29,7 @@ jobs:
         with:
           node-version: 20
 
-      - uses: https://github.com/oven-sh/setup-bun@v2
+      - uses: https://github.com/oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: latest
 
@@ -47,15 +47,6 @@ jobs:
           timeout_minutes: 10
           retry_wait_seconds: 30
           command: npm run test:e2e
-        env:
-          BUCKET_ENV_BACKBLAZE: ${{ secrets.BUCKET_ENV_BACKBLAZE }}
-          BUCKET_ENV_CLOUDFLARE: ${{ secrets.BUCKET_ENV_CLOUDFLARE }}
-          BUCKET_ENV_DIGITALOCEAN: ${{ secrets.BUCKET_ENV_DIGITALOCEAN }}
-          BUCKET_ENV_GARAGE: ${{ secrets.BUCKET_ENV_GARAGE }}
-          BUCKET_ENV_MINIO: ${{ secrets.BUCKET_ENV_MINIO }}
-          BUCKET_ENV_CEPH: ${{ secrets.BUCKET_ENV_CEPH }}
-          BUCKET_ENV_SCALEWAY: ${{ secrets.BUCKET_ENV_SCALEWAY }}
-          BUCKET_ENV_HETZNER: ${{ secrets.BUCKET_ENV_HETZNER }}
 
       - name: Run e2e tests (Bun)
         uses: https://github.com/nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3.0.2 pin
@@ -65,12 +56,3 @@ jobs:
           timeout_minutes: 10
           retry_wait_seconds: 30
           command: npm run test:e2e:bun
-        env:
-          BUCKET_ENV_BACKBLAZE: ${{ secrets.BUCKET_ENV_BACKBLAZE }}
-          BUCKET_ENV_CLOUDFLARE: ${{ secrets.BUCKET_ENV_CLOUDFLARE }}
-          BUCKET_ENV_DIGITALOCEAN: ${{ secrets.BUCKET_ENV_DIGITALOCEAN }}
-          BUCKET_ENV_GARAGE: ${{ secrets.BUCKET_ENV_GARAGE }}
-          BUCKET_ENV_MINIO: ${{ secrets.BUCKET_ENV_MINIO }}
-          BUCKET_ENV_CEPH: ${{ secrets.BUCKET_ENV_CEPH }}
-          BUCKET_ENV_SCALEWAY: ${{ secrets.BUCKET_ENV_SCALEWAY }}
-          BUCKET_ENV_HETZNER: ${{ secrets.BUCKET_ENV_HETZNER }}

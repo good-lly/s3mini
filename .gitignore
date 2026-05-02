@@ -138,3 +138,4 @@ dist
 .pnp.*
 examples/hono-cf-worker-app/.wrangler
 CLAUDE.md
+.claude
