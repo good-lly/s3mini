@@ -4,15 +4,18 @@ import { S3mini, sanitizeETag, runInBatches } from '../dist/s3mini.js';
 import { randomBytes } from 'node:crypto';
 
 const TRANSIENT_CODES = ['ETIMEDOUT', 'ECONNRESET', 'ECONNREFUSED', 'EAI_AGAIN', 'UND_ERR_SOCKET'];
-const MAX_RETRIES = 2;
+const MAX_RETRIES = 1;
+const PER_REQUEST_TIMEOUT_MS = 10_000;
 
 const retryFetch = async (input, init) => {
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
-      return await fetch(input, init);
+      const signal = init?.signal ?? AbortSignal.timeout(PER_REQUEST_TIMEOUT_MS);
+      return await fetch(input, { ...init, signal });
     } catch (err) {
       const code = err?.cause?.code ?? err?.code ?? '';
-      const isTransient = TRANSIENT_CODES.some(c => code.includes(c));
+      const isTimeout = err?.name === 'TimeoutError' || err?.name === 'AbortError';
+      const isTransient = isTimeout || TRANSIENT_CODES.some(c => code.includes(c));
       if (!isTransient || attempt === MAX_RETRIES) throw err;
       await new Promise(r => setTimeout(r, 1000 * 2 ** attempt));
     }
