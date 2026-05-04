@@ -2,12 +2,13 @@ services:
   garage:
     container_name: garage
     image: docker.io/dxflrs/garage:v2.0.0
+    configs:
+      - source: garage_toml
+        target: /etc/garage.toml
+        mode: 0444
     volumes:
-      # config
-      - ./garage/garage.toml:/etc/garage.toml:ro
-      # metadata and data, mapped to what the config expects
-      - ./garage/meta:/var/lib/garage/meta
-      - ./garage/data:/var/lib/garage/data
+      - garage_meta:/var/lib/garage/meta
+      - garage_data:/var/lib/garage/data
     ports:
       - 9000:9000
       - 3903:3903
@@ -18,3 +19,28 @@ services:
       timeout: 10s
       retries: 5
       start_period: 10s
+
+configs:
+  garage_toml:
+    content: |
+      metadata_dir = "/var/lib/garage/meta"
+      data_dir = "/var/lib/garage/data"
+      replication_factor = 1
+      consistency_mode = "consistent"
+
+      rpc_bind_addr = "[::]:3901"
+      rpc_public_addr = "127.0.0.1:3901"
+      rpc_secret = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+      [s3_api]
+      api_bind_addr = "0.0.0.0:9000"
+      s3_region = "garage"
+
+      [admin]
+      api_bind_addr = "0.0.0.0:3903"
+      admin_token = "test-admin-token-for-ci"
+      metrics_token = "test-metrics-token-for-ci"
+
+volumes:
+  garage_meta:
+  garage_data:

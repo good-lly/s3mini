@@ -1,35 +1,14 @@
 'use strict';
 import { randomBytes } from 'node:crypto';
-import { mkdir, writeFile } from 'node:fs/promises';
 import * as dotenv from 'dotenv';
 dotenv.config();
 
-import { join, dirname } from 'node:path';
+import { join } from 'node:path';
 import { composeUp, composeUpWait, execDockerCommand } from './docker.js';
 
 import { promisify } from 'util';
 import { exec } from 'child_process';
 const execAsync = promisify(exec);
-
-const garageConfig = `
-metadata_dir = "/var/lib/garage/meta"
-data_dir = "/var/lib/garage/data"
-replication_factor = 1
-consistency_mode = "consistent"
-
-rpc_bind_addr = "[::]:3901"
-rpc_public_addr = "127.0.0.1:3901"
-rpc_secret = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-
-[s3_api]
-api_bind_addr = "0.0.0.0:9000"
-s3_region = "garage"
-
-[admin]
-api_bind_addr = "0.0.0.0:3903"
-admin_token = "test-admin-token-for-ci"
-metrics_token = "test-metrics-token-for-ci"
-`;
 
 const composeFiles = {
   minio: join(process.cwd(), 'tests', 'compose.minio.yaml'),
@@ -246,9 +225,6 @@ export default async () => {
         await composeUpWait(composeFile);
         break;
       case 'garage':
-        const configPath = join(process.cwd(), 'tests', 'garage', 'garage.toml');
-        await mkdir(dirname(configPath), { recursive: true });
-        await writeFile(configPath, garageConfig);
         await composeUp(composeFile);
         break;
       default:
