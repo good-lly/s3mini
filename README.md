@@ -17,8 +17,8 @@ Issues and PRs should be opened on Codeberg going forward.
 ![Bun](https://img.shields.io/badge/Bun-%23000000.svg?style=for-the-badge&logo=bun&logoColor=white)
 ![Cloudflare](https://img.shields.io/badge/Cloudflare-F38020?style=for-the-badge&logo=Cloudflare&logoColor=white)
 
-[[github](https://github.com/good-lly/s3mini)]
-[[issues](https://github.com/good-lly/s3mini/issues)]
+[[codeberg](https://codeberg.org/thinking_tools/s3mini)]
+[[issues](https://codeberg.org/thinking_tools/s3mini/issues)]
 [[npm](https://www.npmjs.com/package/s3mini)]
 
 ## Features
@@ -40,24 +40,23 @@ Contributions welcome!
 
 Dev:
 
-[![GitHub commit activity (branch)](https://img.shields.io/github/commit-activity/m/good-lly/s3mini/dev?color=green)](https://github.com/good-lly/s3mini/commits/dev)
-[![GitHub Issues or Pull Requests](https://img.shields.io/github/issues/good-lly/s3mini)](https://github.com/good-lly/s3mini/issues)
-[![CodeQL Advanced](https://github.com/good-lly/s3mini/actions/workflows/codeql.yml/badge.svg?branch=dev)](https://github.com/good-lly/s3mini/actions/workflows/codeql.yml)
-[![Bugs](https://sonarcloud.io/api/project_badges/measure?project=good-lly_s3mini&metric=bugs)](https://sonarcloud.io/summary/new_code?id=good-lly_s3mini)
-[![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=good-lly_s3mini&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=good-lly_s3mini)
-[![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=good-lly_s3mini&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=good-lly_s3mini)
-[![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=good-lly_s3mini&metric=vulnerabilities)](https://sonarcloud.io/summary/new_code?id=good-lly_s3mini)
-[![Technical Debt](https://sonarcloud.io/api/project_badges/measure?project=good-lly_s3mini&metric=sqale_index)](https://sonarcloud.io/summary/new_code?id=good-lly_s3mini)
-[![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=good-lly_s3mini&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=good-lly_s3mini)
-[![Test:e2e(all)](https://github.com/good-lly/s3mini/actions/workflows/test-e2e.yml/badge.svg?branch=dev)](https://github.com/good-lly/s3mini/actions/workflows/test-e2e.yml)
+[![Last commit](https://img.shields.io/gitea/last-commit/thinking_tools/s3mini/dev?gitea_url=https%3A%2F%2Fcodeberg.org&color=green)](https://codeberg.org/thinking_tools/s3mini/commits/branch/dev)
+[![Issues](https://img.shields.io/gitea/issues/open/thinking_tools/s3mini?gitea_url=https%3A%2F%2Fcodeberg.org)](https://codeberg.org/thinking_tools/s3mini/issues)
+[![Bugs](https://sonarcloud.io/api/project_badges/measure?project=thinking-tools-at-codeberg_s3mini&metric=bugs&branch=dev)](https://sonarcloud.io/summary/new_code?id=thinking-tools-at-codeberg_s3mini&branch=dev)
+[![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=thinking-tools-at-codeberg_s3mini&metric=reliability_rating&branch=dev)](https://sonarcloud.io/summary/new_code?id=thinking-tools-at-codeberg_s3mini&branch=dev)
+[![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=thinking-tools-at-codeberg_s3mini&metric=security_rating&branch=dev)](https://sonarcloud.io/summary/new_code?id=thinking-tools-at-codeberg_s3mini&branch=dev)
+[![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=thinking-tools-at-codeberg_s3mini&metric=vulnerabilities&branch=dev)](https://sonarcloud.io/summary/new_code?id=thinking-tools-at-codeberg_s3mini&branch=dev)
+[![Technical Debt](https://sonarcloud.io/api/project_badges/measure?project=thinking-tools-at-codeberg_s3mini&metric=sqale_index&branch=dev)](https://sonarcloud.io/summary/new_code?id=thinking-tools-at-codeberg_s3mini&branch=dev)
+[![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=thinking-tools-at-codeberg_s3mini&metric=sqale_rating&branch=dev)](https://sonarcloud.io/summary/new_code?id=thinking-tools-at-codeberg_s3mini&branch=dev)
+[![Test:e2e(all)](https://codeberg.org/thinking_tools/s3mini/actions/workflows/test-e2e.yml/badge.svg?branch=dev)](https://codeberg.org/thinking_tools/s3mini/actions?workflow=test-e2e.yml)
 
-![GitHub Repo stars](https://img.shields.io/github/stars/good-lly/s3mini?style=social)
+[![Codeberg Repo stars](https://img.shields.io/gitea/stars/thinking_tools/s3mini?gitea_url=https%3A%2F%2Fcodeberg.org&style=social&label=Codeberg)](https://codeberg.org/thinking_tools/s3mini/stars) **+** [![GitHub Repo stars](https://img.shields.io/github/stars/good-lly/s3mini?style=social&label=GitHub)](https://github.com/good-lly/s3mini/stargazers)
 [![NPM Downloads](https://img.shields.io/npm/dm/s3mini)](https://www.npmjs.com/package/s3mini)
 ![NPM Version](https://img.shields.io/npm/v/s3mini?color=green)
 ![npm package minimized gzipped size](https://img.shields.io/bundlejs/size/s3mini?color=green)
-![GitHub License](https://img.shields.io/github/license/good-lly/s3mini)
+![License](https://img.shields.io/gitea/license/thinking_tools/s3mini?gitea_url=https%3A%2F%2Fcodeberg.org)
 
-<a href="https://github.com/good-lly/s3mini/issues/"> <img src="https://img.shields.io/badge/contributions-welcome-brightgreen.svg" alt="Contributions welcome" /></a>
+<a href="https://codeberg.org/thinking_tools/s3mini/issues/"> <img src="https://img.shields.io/badge/contributions-welcome-brightgreen.svg" alt="Contributions welcome" /></a>
 
 ### Bun vs Node
 

@@ -61,4 +61,4 @@
 - `lastModified` → `LastModified`
 - `etag` remains `etag`
 
-More: [https://github.com/good-lly/s3mini/releases/tag/v0.3.0](https://github.com/good-lly/s3mini/releases/tag/v0.3.0)
+More: [https://codeberg.org/thinking_tools/s3mini/releases/tag/v0.3.0](https://codeberg.org/thinking_tools/s3mini/releases/tag/v0.3.0)
