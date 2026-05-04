@@ -3,8 +3,29 @@ name: Test:e2e(all)
 on:
   push:
     branches: [dev]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig*.json'
+      - 'rollup.config.*'
+      - 'jest.config.js'
+      - 'jest.public.js'
+      - '.forgejo/workflows/test-e2e.yml'
   pull_request:
     branches: [dev]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig*.json'
+      - 'rollup.config.*'
+      - 'jest.config.js'
+      - 'jest.public.js'
+      - '.forgejo/workflows/test-e2e.yml'
+  workflow_dispatch:
 env:
   BUCKET_ENV_BACKBLAZE: ${{ secrets.BUCKET_ENV_BACKBLAZE }}
   BUCKET_ENV_MINIO: ${{ secrets.BUCKET_ENV_MINIO }}

@@ -1,14 +1,3 @@
-# Migrating to Codeberg
-
-This repository has moved to Codeberg.
-
-GitHub will no longer receive updates. Please update your remotes:
-
-`git remote set-url origin https://codeberg.org/thinking_tools/s3mini.git`
-
-Issues and PRs should be opened on Codeberg going forward.
-
-
 # s3mini | Tiny & fast S3 client for node, bun and edge platforms.
 
 `s3mini` is an ultra-lightweight Typescript client (~20 KB minified, ≈15 % more ops/s) for S3-compatible object storage. It runs on Node, Bun, Cloudflare Workers, and other edge platforms. It has been tested on Cloudflare R2, Backblaze B2, DigitalOcean Spaces, Ceph, Oracle, Garage and MinIO. (No Browser support!)
@@ -54,7 +43,7 @@ Dev:
 [![NPM Downloads](https://img.shields.io/npm/dm/s3mini)](https://www.npmjs.com/package/s3mini)
 ![NPM Version](https://img.shields.io/npm/v/s3mini?color=green)
 ![npm package minimized gzipped size](https://img.shields.io/bundlejs/size/s3mini?color=green)
-![License](https://img.shields.io/gitea/license/thinking_tools/s3mini?gitea_url=https%3A%2F%2Fcodeberg.org)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://codeberg.org/thinking_tools/s3mini/src/branch/dev/LICENSE)
 
 <a href="https://codeberg.org/thinking_tools/s3mini/issues/"> <img src="https://img.shields.io/badge/contributions-welcome-brightgreen.svg" alt="Contributions welcome" /></a>
 
@@ -537,9 +526,15 @@ const url = await s3.getPresignedUrl('GET', 'report.pdf', 3600, {
 
 ```typescript
 // Upload URL that requires Content-Type — client MUST send this exact header
-const url = await s3.getPresignedUrl('PUT', 'uploads/data.json', 300, {}, {
-  'Content-Type': 'application/json',
-});
+const url = await s3.getPresignedUrl(
+  'PUT',
+  'uploads/data.json',
+  300,
+  {},
+  {
+    'Content-Type': 'application/json',
+  },
+);
 
 await fetch(url, {
   method: 'PUT',
@@ -757,7 +752,7 @@ If you figure out a solution to your question or problem on your own, please con
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Sponsor This Project
 
