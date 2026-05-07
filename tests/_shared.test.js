@@ -4,8 +4,8 @@ import { S3mini, sanitizeETag, runInBatches } from '../dist/s3mini.js';
 import { randomBytes } from 'node:crypto';
 
 const TRANSIENT_CODES = ['ETIMEDOUT', 'ECONNRESET', 'ECONNREFUSED', 'EAI_AGAIN', 'UND_ERR_SOCKET'];
-const MAX_RETRIES = 1;
-const PER_REQUEST_TIMEOUT_MS = 10_000;
+const MAX_RETRIES = 2;
+const PER_REQUEST_TIMEOUT_MS = 20_000;
 
 const retryFetch = async (input, init) => {
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
