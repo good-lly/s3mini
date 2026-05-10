@@ -1019,7 +1019,8 @@ export const testRunner = bucket => {
     const dataArrayBuffer = await s3client.getObjectArrayBuffer(multipartKey);
     const dataBuffer = Buffer.from(dataArrayBuffer);
     expect(dataBuffer).toBeInstanceOf(Buffer);
-    expect(dataBuffer.toString('utf-8')).toBe(large_buffer.toString('utf-8'));
+    expect(dataBuffer.length).toBe(large_buffer.length);
+    expect(dataBuffer.equals(large_buffer)).toBe(true);
 
     const multipartUpload = await s3client.listMultipartUploads();
     expect(multipartUpload).toBeDefined();
@@ -1067,7 +1068,9 @@ export const testRunner = bucket => {
 
     expect(rangeData).toBeInstanceOf(ArrayBuffer);
     const rangeBuffer = Buffer.from(rangeData);
-    expect(rangeBuffer.toString('utf-8')).toBe(large_buffer.subarray(rangeStart, rangeEnd).toString('utf-8'));
+    const rangeExpected = large_buffer.subarray(rangeStart, rangeEnd);
+    expect(rangeBuffer.length).toBe(rangeExpected.length);
+    expect(rangeBuffer.equals(rangeExpected)).toBe(true);
 
     // Open-ended range: bytes=EIGHT_MB- (from 8MB to end)
     const openRangeStart = EIGHT_MB;
@@ -1077,7 +1080,7 @@ export const testRunner = bucket => {
     const openRangeData = await openRangeResponse.arrayBuffer();
     const openRangeBuffer = Buffer.from(openRangeData);
     expect(openRangeBuffer.length).toBe(large_buffer.length - openRangeStart);
-    expect(openRangeBuffer.toString('utf-8')).toBe(large_buffer.subarray(openRangeStart).toString('utf-8'));
+    expect(openRangeBuffer.equals(large_buffer.subarray(openRangeStart))).toBe(true);
     const contentRange = openRangeResponse.headers.get('content-range');
     expect(contentRange).toMatch(new RegExp(`^bytes ${openRangeStart}-\\d+/${large_buffer.length}$`));
 
