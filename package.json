@@ -1,6 +1,6 @@
 {
   "name": "s3mini",
-  "version": "0.9.4",
+  "version": "0.9.5",
   "description": "👶 Tiny & fast S3 client for node and edge computing platforms",
   "homepage": "https://codeberg.org/thinking_tools/s3mini",
   "bugs": {
