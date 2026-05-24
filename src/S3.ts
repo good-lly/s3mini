@@ -19,6 +19,7 @@ import {
   toUint8Array,
   isBun,
   extractBaseEndpoint,
+  byCodePoint,
 } from './utils.js';
 import type * as IT from './types.js';
 
@@ -345,20 +346,13 @@ class S3mini {
 
     const ignoredHeaders = new Set(['authorization', 'content-length', 'content-type', 'user-agent']);
 
-    let canonicalHeaders = '';
-    let signedHeaders = '';
+    const sortedHeaders = Object.entries(headers)
+      .map(([key, value]): [string, string] => [key.toLowerCase(), String(value).trim()])
+      .filter(([lowerKey]) => !ignoredHeaders.has(lowerKey))
+      .sort(([a], [b]) => byCodePoint(a, b));
 
-    for (const [key, value] of Object.entries(headers).sort(([a], [b]) => a.localeCompare(b))) {
-      const lowerKey = key.toLowerCase();
-      if (!ignoredHeaders.has(lowerKey)) {
-        if (canonicalHeaders) {
-          canonicalHeaders += '\n';
-          signedHeaders += ';';
-        }
-        canonicalHeaders += `${lowerKey}:${String(value).trim()}`;
-        signedHeaders += lowerKey;
-      }
-    }
+    const canonicalHeaders = sortedHeaders.map(([k, v]) => `${k}:${v}`).join('\n');
+    const signedHeaders = sortedHeaders.map(([k]) => k).join(';');
     const canonicalRequest = `${method}\n${url.pathname}\n${this._buildCanonicalQueryString(query)}\n${canonicalHeaders}\n\n${signedHeaders}\n${C.UNSIGNED_PAYLOAD}`;
     const stringToSign = `${C.AWS_ALGORITHM}\n${fullDatetime}\n${credentialScope}\n${hexFromBuffer(await sha256(canonicalRequest))}`;
     if (shortDatetime !== this.signingKeyDate || !this.signingKey) {
@@ -2053,8 +2047,9 @@ class S3mini {
       return '';
     }
     return Object.keys(queryParams)
-      .map(key => `${encodeURIComponent(key)}=${encodeURIComponent(queryParams[key] as string)}`)
-      .sort((a, b) => a.localeCompare(b))
+      .map((key): [string, string] => [encodeURIComponent(key), encodeURIComponent(String(queryParams[key]))])
+      .sort(([a], [b]) => byCodePoint(a, b))
+      .map(([k, v]) => `${k}=${v}`)
       .join('&');
   }
   /**
@@ -2127,7 +2122,7 @@ class S3mini {
         headerEntries.push([lowerKey, String(value).trim()]);
       }
     }
-    headerEntries.sort(([a], [b]) => a.localeCompare(b));
+    headerEntries.sort(([a], [b]) => byCodePoint(a, b));
 
     const canonicalHeaders = headerEntries.map(([k, v]) => `${k}:${v}`).join('\n');
     const signedHeaders = headerEntries.map(([k]) => k).join(';');

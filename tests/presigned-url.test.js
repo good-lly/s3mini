@@ -2,6 +2,60 @@
 
 import { S3mini } from '../dist/s3mini.js';
 
+const enc = new TextEncoder();
+const toHex = buf => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+const sha256Hex = async str => toHex(await globalThis.crypto.subtle.digest('SHA-256', enc.encode(str)));
+const hmacBytes = async (key, str) => {
+  const k = await globalThis.crypto.subtle.importKey(
+    'raw',
+    typeof key === 'string' ? enc.encode(key) : key,
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  return new Uint8Array(await globalThis.crypto.subtle.sign('HMAC', k, enc.encode(str)));
+};
+const byCodePoint = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+
+/**
+ * Independent AWS SigV4 reimplementation. Recomputes the signature a strict
+ * S3/R2 server derives from the presigned URL and returns whether it matches
+ * the one s3mini embedded. The canonical query and canonical headers are
+ * re-sorted by code point here (NOT taken from the URL's order), so any
+ * locale/case ordering bug in the library is caught.
+ */
+const presignedSignatureMatches = async (method, urlStr, { secretAccessKey, region, extraHeaders = {} }) => {
+  const u = new URL(urlStr);
+  const sp = u.searchParams;
+  const embedded = sp.get('X-Amz-Signature');
+  const amzDate = sp.get('X-Amz-Date');
+  const shortDate = amzDate.slice(0, 8);
+
+  const canonicalQuery = [...sp.entries()]
+    .filter(([k]) => k !== 'X-Amz-Signature')
+    .map(([k, v]) => [encodeURIComponent(k), encodeURIComponent(v)])
+    .sort(([a], [b]) => byCodePoint(a, b))
+    .map(([k, v]) => `${k}=${v}`)
+    .join('&');
+
+  const signed = [
+    ['host', u.host],
+    ...Object.entries(extraHeaders).map(([k, v]) => [k.toLowerCase(), String(v).trim()]),
+  ].sort(([a], [b]) => byCodePoint(a, b));
+  const canonicalHeaders = signed.map(([k, v]) => `${k}:${v}`).join('\n');
+  const signedHeaders = signed.map(([k]) => k).join(';');
+
+  const canonicalRequest = `${method}\n${u.pathname}\n${canonicalQuery}\n${canonicalHeaders}\n\n${signedHeaders}\nUNSIGNED-PAYLOAD`;
+  const scope = `${shortDate}/${region}/s3/aws4_request`;
+  const stringToSign = `AWS4-HMAC-SHA256\n${amzDate}\n${scope}\n${await sha256Hex(canonicalRequest)}`;
+
+  let key = await hmacBytes('AWS4' + secretAccessKey, shortDate);
+  key = await hmacBytes(key, region);
+  key = await hmacBytes(key, 's3');
+  key = await hmacBytes(key, 'aws4_request');
+  return toHex(await hmacBytes(key, stringToSign)) === embedded;
+};
+
 describe('getPresignedUrl', () => {
   const s3 = new S3mini({
     accessKeyId: 'test-access-key',
@@ -265,6 +319,62 @@ describe('getPresignedUrl', () => {
       const sig1 = new URL(url1).searchParams.get('X-Amz-Signature');
       const sig2 = new URL(url2).searchParams.get('X-Amz-Signature');
       expect(sig1).toBe(sig2);
+    });
+  });
+
+  describe('SigV4 canonical ordering (regression)', () => {
+    // Verifies WHY ordering matters: the embedded signature must validate against
+    // an independent server-side recomputation. These would fail before the
+    // localeCompare -> code-point fix in _buildCanonicalQueryString / header sorts.
+    it('signature validates for mixed-case query params (presigned multipart UploadPart)', async () => {
+      const url = await s3.getPresignedUrl('PUT', 'multipart-key', 3600, {
+        partNumber: '1',
+        uploadId: 'EXAMPLE-UID',
+      });
+      const ok = await presignedSignatureMatches('PUT', url, {
+        secretAccessKey: 'test-secret-key',
+        region: 'us-east-1',
+      });
+      expect(ok).toBe(true);
+    });
+
+    it('orders query parameters by code point, not locale', async () => {
+      const url = await s3.getPresignedUrl('PUT', 'multipart-key', 3600, {
+        partNumber: '1',
+        uploadId: 'EXAMPLE-UID',
+      });
+      const keys = [...new URL(url).searchParams.keys()].filter(k => k !== 'X-Amz-Signature');
+      expect(keys).toEqual([...keys].sort()); // default Array sort = code point
+      // Uppercase X (0x58) must precede lowercase p (0x70); localeCompare reversed this.
+      expect(keys.indexOf('X-Amz-Algorithm')).toBeLessThan(keys.indexOf('partNumber'));
+    });
+
+    it('orders signed headers by code point even when locale order differs', async () => {
+      // '1' (0x31) < '_' (0x5F) < 'f' (0x66) by code point; localeCompare puts '_' first.
+      const url = await s3.getPresignedUrl('PUT', 'file.bin', 300, {}, {
+        'x-amz-meta-foo': 'a',
+        'x-amz-meta-_z': 'b',
+        'x-amz-meta-1': 'c',
+      });
+      const signedHeaders = new URL(url).searchParams.get('X-Amz-SignedHeaders');
+      expect(signedHeaders).toBe('host;x-amz-meta-1;x-amz-meta-_z;x-amz-meta-foo');
+    });
+
+    it('signature validates with combined mixed-case query and signed headers', async () => {
+      const extraHeaders = {
+        'Content-Type': 'application/octet-stream',
+        'X-Amz-Meta-Foo': 'bar',
+      };
+      const url = await s3.getPresignedUrl('PUT', 'multipart-key', 3600,
+        { partNumber: '2', uploadId: 'EXAMPLE-UID' },
+        extraHeaders,
+      );
+      const ok = await presignedSignatureMatches('PUT', url, {
+        secretAccessKey: 'test-secret-key',
+        region: 'us-east-1',
+        extraHeaders,
+      });
+      expect(ok).toBe(true);
     });
   });
 });

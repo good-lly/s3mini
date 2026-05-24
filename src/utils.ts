@@ -20,6 +20,17 @@ export const extractBaseEndpoint = (endpoint: URL, bucket: string): string => {
   return endpoint.origin;
 };
 
+/**
+ * Compare two strings by code point, as required for AWS SigV4 canonical
+ * ordering of query parameters and headers. `localeCompare` MUST NOT be used
+ * here: it is locale-aware and case-insensitive by default, so it mis-orders
+ * mixed-case names (e.g. `partNumber` before `X-Amz-*`) and breaks signatures.
+ * @param a First string
+ * @param b Second string
+ * @returns -1, 0, or 1
+ */
+export const byCodePoint = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+
 const ENCODR = new TextEncoder();
 const chunkSize = 0x8000; // 32KB chunks
 const HEX_CHARS = new Uint8Array([48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 97, 98, 99, 100, 101, 102]);
