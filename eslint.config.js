@@ -14,6 +14,7 @@ export default defineConfig(
     'jest.config.js',
     'rollup.config.js',
     'jest.public.js',
+    'jest.unit.js',
     'jest.config.perf.js',
     'tsconfig.json',
     '*.md',

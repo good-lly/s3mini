@@ -23,7 +23,7 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test:unit": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testMatch='<rootDir>/tests/{presigned-url,extract-bucket-name}.test.js' --verbose",
+    "test:unit": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.unit.js",
     "test:public": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.public.js --verbose",
     "test:providers": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.config.js --verbose",
     "test:e2e": "npm run test:public && npm run test:providers",
@@ -74,6 +74,7 @@
     "@aws-lite/client": "0.23.5",
     "@aws-lite/s3": "0.2.6",
     "@aws-sdk/client-s3": "3.1026.0",
+    "@babel/preset-typescript": "^7.29.7",
     "@eslint/js": "^10.0.1",
     "@rollup/plugin-node-resolve": "16.0.3",
     "@rollup/plugin-terser": "1.0.0",
