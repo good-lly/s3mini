@@ -177,7 +177,7 @@ const unescapeXml = (value: string): string =>
 
 export const parseXml = (input: string): XmlValue => {
   const xmlContent = input.replace(/<\?xml[^?]*\?>\s*/, '');
-  const RE_TAG = /<([A-Za-z_][\w\-.]*)[^>]*?>([\s\S]*?)<\/\1>/gm;
+  const RE_TAG = /<([A-Za-z_][\w\-.]*)[^>]*?(?:>([\s\S]*?)<\/\1>|\s*\/>)/gm;
   const result: XmlMap = {}; // strong type, no `any`
   let match: RegExpExecArray | null;
 
