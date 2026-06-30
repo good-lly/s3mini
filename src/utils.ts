@@ -29,7 +29,11 @@ export const extractBaseEndpoint = (endpoint: URL, bucket: string): string => {
  * @param b Second string
  * @returns -1, 0, or 1
  */
-export const byCodePoint = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+export const byCodePoint = (a: string, b: string): number => {
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
+};
 
 const ENCODR = new TextEncoder();
 const chunkSize = 0x8000; // 32KB chunks
@@ -177,7 +181,7 @@ const unescapeXml = (value: string): string =>
 
 export const parseXml = (input: string): XmlValue => {
   const xmlContent = input.replace(/<\?xml[^?]*\?>\s*/, '');
-  const RE_TAG = /<([A-Za-z_][\w\-.]*)[^>]*?(?:>([\s\S]*?)<\/\1>|\s*\/>)/gm;
+  const RE_TAG = /<([A-Za-z_][\w\-.]*)[^>]*?(?:>([\s\S]*?)<\/\1>|\/>)/gm;
   const result: XmlMap = {}; // strong type, no `any`
   let match: RegExpExecArray | null;
 
