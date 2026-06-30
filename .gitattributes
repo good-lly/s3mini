@@ -1,0 +1,6 @@
+# Language stats (GitHub Linguist / Codeberg go-enry):
+# only the library source under src/ should count toward the language bar.
+tests/**     linguist-vendored
+examples/**  linguist-vendored
+*.config.js  linguist-vendored
+jest.*.js    linguist-vendored
