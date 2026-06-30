@@ -5,7 +5,8 @@ import { randomBytes } from 'node:crypto';
 
 const TRANSIENT_CODES = ['ETIMEDOUT', 'ECONNRESET', 'ECONNREFUSED', 'EAI_AGAIN', 'UND_ERR_SOCKET'];
 const MAX_RETRIES = 2;
-const PER_REQUEST_TIMEOUT_MS = 20_000;
+// 60s: Cloudflare R2's bulk DeleteObjects (up to 1000 keys/request) can exceed a tighter limit.
+const PER_REQUEST_TIMEOUT_MS = 60_000;
 
 const retryFetch = async (input, init) => {
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
