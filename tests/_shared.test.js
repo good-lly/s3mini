@@ -1,6 +1,6 @@
 'use strict';
 
-import { S3mini, sanitizeETag, runInBatches } from '../dist/s3mini.js';
+import { S3mini, sanitizeETag, runInBatches } from '../dist/index.mjs';
 import { randomBytes } from 'node:crypto';
 
 const TRANSIENT_CODES = ['ETIMEDOUT', 'ECONNRESET', 'ECONNREFUSED', 'EAI_AGAIN', 'UND_ERR_SOCKET'];

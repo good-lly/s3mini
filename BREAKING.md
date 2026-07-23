@@ -8,6 +8,10 @@ This is a comprehensive list of the breaking changes introduced in the major ver
 - [Version v0.4.0](#version-040)
 - [Version v0.3.0](#version-030)
 
+## Next
+
+- ESM only package, no more minified CJS build
+
 ## Version 0.8.1
 
 - `listObjects` and `listObjectsPaged` now include `CommonPrefixes` in results when using the `delimiter` option

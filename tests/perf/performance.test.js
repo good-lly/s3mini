@@ -8,7 +8,7 @@ import {
 } from '@aws-sdk/client-s3';
 import * as Minio from 'minio';
 import awsLite from '@aws-lite/client';
-import { S3mini } from '../../dist/s3mini.min.js';
+import { S3mini } from '../../dist/index.mjs';
 // import { S3mini as S3miniOld } from 's3mini';
 import { Bench } from 'tinybench';
 import { printTable } from 'console-table-printer';

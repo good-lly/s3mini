@@ -1,6 +1,6 @@
 'use strict';
 
-import { S3mini } from '../dist/s3mini.js';
+import { S3mini } from '../dist/index.mjs';
 
 /**
  * Unit tests for anonymous/public S3 access (empty credentials).
@@ -42,7 +42,7 @@ describe('Anonymous S3 access (empty credentials)', () => {
     expect(capturedHeaders).toBeDefined();
     expect(capturedHeaders['Authorization']).toBeUndefined();
     expect(capturedHeaders['authorization']).toBeUndefined();
-    
+
     // Should still have Host header
     expect(capturedHeaders['host']).toBeDefined();
   });

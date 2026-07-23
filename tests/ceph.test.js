@@ -1,6 +1,6 @@
 'use strict';
 
-import { S3mini } from '../dist/s3mini.js';
+import { S3mini } from '../dist/index.mjs';
 import { beforeRun, resetBucketBeforeAll } from './_shared.test.js';
 
 import * as dotenv from 'dotenv';

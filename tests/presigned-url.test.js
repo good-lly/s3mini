@@ -1,6 +1,6 @@
 'use strict';
 
-import { S3mini } from '../dist/s3mini.js';
+import { S3mini } from '../dist/index.mjs';
 
 const enc = new TextEncoder();
 const toHex = buf => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
