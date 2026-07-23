@@ -12,7 +12,7 @@ export default defineConfig(
     'tests/**',
     'eslint.config.js',
     'jest.config.js',
-    'rollup.config.js',
+    'tsdown.config.ts',
     'jest.public.js',
     'jest.unit.js',
     'jest.config.perf.js',

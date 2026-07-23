@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { S3mini } from '../../../dist/s3mini.js';
+import { S3mini } from '../../../dist/index.mjs';
 
 const app = new Hono();
 
