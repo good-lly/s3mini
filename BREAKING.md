@@ -3,12 +3,12 @@
 This is a comprehensive list of the breaking changes introduced in the major version releases of s3mini library.
 
 ## Versions
-
+- [Verison v1.0.0](#version-100)
 - [Version v0.8.1](#version-081)
 - [Version v0.4.0](#version-040)
 - [Version v0.3.0](#version-030)
 
-## Next
+## Version 1.0.0
 
 - ESM only package, no more minified CJS build
 
