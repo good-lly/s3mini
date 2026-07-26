@@ -7,7 +7,7 @@ on:
       - 'src/**'
       - 'tests/**'
       - 'package.json'
-      - 'package-lock.json'
+      - 'bun.lock'
       - 'tsconfig*.json'
       - 'tsdown.config.*'
       - 'jest.config.js'
@@ -19,7 +19,7 @@ on:
       - 'src/**'
       - 'tests/**'
       - 'package.json'
-      - 'package-lock.json'
+      - 'bun.lock'
       - 'tsconfig*.json'
       - 'tsdown.config.*'
       - 'jest.config.js'
@@ -64,7 +64,7 @@ jobs:
           echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
 
       - name: Install dependencies
-        run: npm install
+        run: bun install --frozen-lockfile
 
       - name: Build project
         run: npm run build
