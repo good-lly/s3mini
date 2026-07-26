@@ -48,7 +48,8 @@ jobs:
 
       - uses: https://data.forgejo.org/actions/setup-node@v4
         with:
-          node-version: 20
+          # tsdown@0.22 requires Node ^22.18 || >=24.11 (Promise.withResolvers, etc.)
+          node-version: 22
 
       - name: Install Bun
         env:
