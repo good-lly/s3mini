@@ -1,6 +1,7 @@
 - [Bucket Operations](#bucket-operations)
   - [List Operations](#list-operations)
   - [Object Operations](#object-operations)
+  - [Object Versioning](#object-versioning)
   - [Multipart Upload](#multipart-upload)
   - [Pre-signed URLs](#pre-signed-urls)
   - [Useful Helpers](#useful-helpers)
@@ -142,6 +143,73 @@ const response = await s3client.getObjectRaw(key);
 const key = 'example.txt';
 const deleted = await s3client.deleteObject(key);
 console.log(`File deleted: ${deleted}`);
+```
+
+### Object Versioning
+
+Requires a **versioned** bucket and a provider that implements the versioning S3 APIs
+(ListObjectVersions, GetObject with `versionId`, versioned Delete/Copy).
+
+**Provider notes:**
+
+| Provider | Notes |
+|----------|--------|
+| MinIO / AWS S3 / Ceph | Full support; enable with `setBucketVersioning('Enabled')` (MinIO E2E does this in setup) |
+| Backblaze B2 | Object versions work; `setBucketVersioning` may 403 — enable “keep all versions” in the B2 bucket settings |
+| Cloudflare R2 | **Not supported.** R2 returns `x-amz-version-id` on Put for client compatibility, but ListObjectVersions / GetObject?versionId / PutBucketVersioning return `501 NotImplemented` |
+| Garage | No S3 object versioning |
+
+#### Enable / read bucket versioning
+
+```javascript
+await s3client.setBucketVersioning('Enabled'); // or 'Suspended'
+const status = await s3client.getBucketVersioning(); // 'Enabled' | 'Suspended' | 'Off'
+```
+
+Upload response headers may include `x-amz-version-id` (on some providers this is cosmetic only — verify with get-by-versionId).
+
+#### Get a specific version
+
+```javascript
+// opts are forwarded as query parameters
+const body = await s3client.getObject('file.jpg', { versionId: 'abc123' });
+```
+
+#### List all versions of one object
+
+```javascript
+// Returns every version (+ delete markers) for the exact key.
+// Each entry may include VersionId, IsLatest, IsDeleteMarker.
+const versions = await s3client.listObjectVersions('file.jpg');
+const latest = versions?.find(v => v.IsLatest && !v.IsDeleteMarker);
+const older = versions?.filter(v => !v.IsLatest && !v.IsDeleteMarker);
+```
+
+#### List versions for a prefix (bucket-wide)
+
+```javascript
+// Same listObjects API; pass { versions: true }
+const all = await s3client.listObjects('/', 'photos/', undefined, { versions: true });
+// also works with listObjectsPaged(..., { versions: true })
+```
+
+#### Restore an older version (copy onto same key)
+
+```javascript
+await s3client.copyObject('file.jpg', 'file.jpg', { versionId: olderVersionId });
+```
+
+#### Delete a specific version
+
+```javascript
+await s3client.deleteObject({ key: 'file.jpg', versionId: 'abc123' });
+
+// Bulk: mix plain keys and versioned targets
+await s3client.deleteObjects([
+  'other.txt',
+  { key: 'file.jpg', versionId: 'v1' },
+  { key: 'file.jpg', versionId: 'v2' },
+]);
 ```
 
 ### Multipart Upload

@@ -39,6 +39,21 @@ export interface ListObject {
   LastModified: Date;
   ETag: string;
   StorageClass: string;
+  /** Present when listing with `{ versions: true }` or via `listObjectVersions`. */
+  VersionId?: string;
+  /** Present when listing versions; true if this is the current version of the key. */
+  IsLatest?: boolean;
+  /** True when the entry is a delete marker from ListObjectVersions. */
+  IsDeleteMarker?: boolean;
+}
+
+/**
+ * Object identity for delete APIs. Use instead of a bare key string when
+ * targeting a specific version on a versioned bucket.
+ */
+export interface DeleteObject {
+  key: string;
+  versionId?: string;
 }
 
 export interface CompleteMultipartUploadResult {
@@ -106,6 +121,12 @@ export interface XmlMap {
 }
 
 export interface CopyObjectOptions {
+  /**
+   * Source object version to copy. Appended as `?versionId=` on `x-amz-copy-source`.
+   * Useful for restoring an older version (copy version onto the same key).
+   */
+  versionId?: string;
+
   /**
    * Specifies whether the metadata is copied from the source object or replaced with metadata provided in the request.
    * Valid values: 'COPY' | 'REPLACE'

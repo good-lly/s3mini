@@ -506,12 +506,65 @@ class S3mini {
   }
 
   /**
+   * Sets bucket versioning status (PutBucketVersioning).
+   * Required before object versioning APIs (`listObjectVersions`, versioned delete/copy) are useful.
+   * @param {'Enabled' | 'Suspended'} status - Versioning status to apply.
+   * @returns {Promise<boolean>} True when the service accepts the configuration (HTTP 200).
+   * @example
+   * await s3.setBucketVersioning('Enabled');
+   */
+  public async setBucketVersioning(status: 'Enabled' | 'Suspended'): Promise<boolean> {
+    if (status !== 'Enabled' && status !== 'Suspended') {
+      throw new TypeError(`${C.ERROR_PREFIX}status must be 'Enabled' or 'Suspended'`);
+    }
+    const xmlBody =
+      '<VersioningConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/">' +
+      `<Status>${status}</Status>` +
+      '</VersioningConfiguration>';
+    const res = await this._signedRequest('PUT', '', {
+      query: { versioning: '' },
+      body: xmlBody,
+      headers: {
+        [C.HEADER_CONTENT_TYPE]: C.XML_CONTENT_TYPE,
+        [C.HEADER_CONTENT_LENGTH]: getByteSize(xmlBody),
+      },
+      withQuery: true,
+      tolerated: [200],
+    });
+    return res.status === 200;
+  }
+
+  /**
+   * Gets bucket versioning status (GetBucketVersioning).
+   * @returns {Promise<'Enabled' | 'Suspended' | 'Off'>} Current status. `'Off'` when the config is empty/unset.
+   */
+  public async getBucketVersioning(): Promise<'Enabled' | 'Suspended' | 'Off'> {
+    const res = await this._signedRequest('GET', '', {
+      query: { versioning: '' },
+      withQuery: true,
+      tolerated: [200, 404],
+    });
+    if (res.status !== 200) {
+      void res.body?.cancel();
+      return 'Off';
+    }
+    const raw = parseXml(await res.text()) as Record<string, unknown>;
+    const cfg = (raw.VersioningConfiguration || raw.versioningConfiguration || raw) as Record<string, unknown>;
+    const status = cfg.Status ?? cfg.status;
+    if (status === 'Enabled' || status === 'Suspended') {
+      return status;
+    }
+    return 'Off';
+  }
+
+  /**
    * Lists objects in the bucket with optional filtering and no pagination.
    * This method retrieves all objects matching the criteria (not paginated like listObjectsV2).
+   * Pass `{ versions: true }` in opts to list object versions (ListObjectVersions API).
    * @param {string} [delimiter='/'] - The delimiter to use for grouping objects.
    * @param {string} [prefix=''] - The prefix to filter objects by.
    * @param {number} [maxKeys] - The maximum number of keys to return. If not provided, all keys will be returned.
-   * @param {Record<string, unknown>} [opts={}] - Additional options for the request.
+   * @param {Record<string, unknown>} [opts={}] - Additional options for the request. Use `{ versions: true }` for version listing.
    * @returns {Promise<IT.ListObject[] | null>} A promise that resolves to an array of objects or null if the bucket is empty.
    * @example
    * // List all objects
@@ -519,6 +572,9 @@ class S3mini {
    *
    * // List objects with prefix
    * const photos = await s3.listObjects('/', 'photos/', 100);
+   *
+   * // List object versions (includes VersionId / IsLatest; may include delete markers)
+   * const versions = await s3.listObjects('/', 'photos/', undefined, { versions: true });
    */
   public async listObjects(
     delimiter: string = '/',
@@ -530,7 +586,7 @@ class S3mini {
     this._checkPrefix(prefix);
     this._checkOpts(opts);
 
-    if (this._bun && delimiter === '/') {
+    if (this._bun && delimiter === '/' && !this._isVersionsMode(opts)) {
       const extraKeys = Object.keys(opts).filter(k => k !== 'delimiter');
       if (extraKeys.length === 0) {
         return this._bunListAll(prefix, maxKeys, opts.delimiter as string | undefined);
@@ -565,11 +621,13 @@ class S3mini {
   /**
    * Lists objects in the bucket with optional filtering and pagination using a continuation token.
    * This method retrieves objects matching the criteria (paginated like listObjectsV2).
+   * Pass `{ versions: true }` in opts to list object versions (uses key-marker / version-id-marker under the hood;
+   * the returned token is opaque and only valid with the same opts).
    * @param {string} [delimiter='/'] - The delimiter to use for grouping objects.
    * @param {string} [prefix=''] - The prefix to filter objects by.
    * @param {number} [maxKeys] - The maximum number of keys to return. Uses a default value of 100.
    * @param {string} [nextContinuationToken] - The nextContinuationToken to continue previous results. If not provided, starts from the beginning.
-   * @param {Record<string, unknown>} [opts={}] - Additional options for the request.
+   * @param {Record<string, unknown>} [opts={}] - Additional options for the request. Use `{ versions: true }` for version listing.
    * @returns {Promise<{objects: IT.ListObject[] | null; nextContinuationToken?: string } | undefined | null>} A promise that resolves to an array of objects or null if the bucket is empty, along with nextContinuationToken if there are more reccords.
    * @example
    * // List all objects
@@ -608,6 +666,29 @@ class S3mini {
     return { objects: all, nextContinuationToken: token };
   }
 
+  /**
+   * Lists all versions (and delete markers) of a specific object key.
+   * Auto-paginates until every version is returned (or maxKeys is reached).
+   * Entries include `VersionId`, `IsLatest`, and optionally `IsDeleteMarker`.
+   *
+   * @param {string} key - Exact object key whose versions to list.
+   * @param {number} [maxKeys] - Optional cap on how many version entries to return.
+   * @returns {Promise<IT.ListObject[] | null>} All versions for the key, or null if the bucket is not found.
+   * @example
+   * const versions = await s3.listObjectVersions('file.jpg');
+   * const latest = versions?.find(v => v.IsLatest);
+   * const older = versions?.filter(v => !v.IsLatest && !v.IsDeleteMarker);
+   */
+  public async listObjectVersions(key: string, maxKeys?: number): Promise<IT.ListObject[] | null> {
+    this._checkKey(key);
+    // Narrow server-side with prefix=key, then filter exact Key match (prefix is a string prefix).
+    const listed = await this.listObjects('/', key, maxKeys, { versions: true });
+    if (listed === null) {
+      return null;
+    }
+    return listed.filter(obj => obj.Key === key);
+  }
+
   private async _fetchObjectBatch(
     keyPath: string,
     prefix: string,
@@ -633,7 +714,31 @@ class S3mini {
     }
 
     const xmlText = await res.text();
-    return this._parseListObjectsResponse(xmlText);
+    return this._parseListObjectsResponse(xmlText, this._isVersionsMode(opts));
+  }
+
+  private _isVersionsMode(opts: Record<string, unknown>): boolean {
+    const v = opts.versions;
+    return v === true || v === '' || v === 'true' || v === 1;
+  }
+
+  private _encodeVersionListToken(keyMarker: string, versionIdMarker: string): string {
+    return JSON.stringify({ k: keyMarker, v: versionIdMarker });
+  }
+
+  private _decodeVersionListToken(token: string): { keyMarker: string; versionIdMarker: string } {
+    try {
+      const parsed = JSON.parse(token) as { k?: unknown; v?: unknown };
+      if (parsed && typeof parsed.k === 'string') {
+        return {
+          keyMarker: parsed.k,
+          versionIdMarker: typeof parsed.v === 'string' ? parsed.v : '',
+        };
+      }
+    } catch {
+      // fall through — treat raw token as key-marker only
+    }
+    return { keyMarker: token, versionIdMarker: '' };
   }
 
   private _buildListObjectsQuery(
@@ -643,13 +748,33 @@ class S3mini {
     opts: Record<string, unknown>,
   ): Record<string, unknown> {
     const batchSize = Math.min(remaining, 1000); // S3 ceiling
+    const versionsMode = this._isVersionsMode(opts);
+    // Do not forward control key that we map ourselves
+    const restOpts: Record<string, unknown> = { ...opts };
+    delete restOpts.versions;
+
+    if (versionsMode) {
+      const markers = token ? this._decodeVersionListToken(token) : undefined;
+      return {
+        versions: '',
+        'max-keys': String(batchSize),
+        ...(prefix ? { prefix } : {}),
+        ...(markers
+          ? {
+              'key-marker': markers.keyMarker,
+              'version-id-marker': markers.versionIdMarker,
+            }
+          : {}),
+        ...restOpts,
+      };
+    }
 
     return {
       'list-type': C.LIST_TYPE, // =2 for V2
       'max-keys': String(batchSize),
       ...(prefix ? { prefix } : {}),
       ...(token ? { 'continuation-token': token } : {}),
-      ...opts,
+      ...restOpts,
     };
   }
 
@@ -669,7 +794,10 @@ class S3mini {
     );
   }
 
-  private _parseListObjectsResponse(xmlText: string): {
+  private _parseListObjectsResponse(
+    xmlText: string,
+    versionsMode = false,
+  ): {
     objects: IT.ListObject[];
     continuationToken?: string;
   } {
@@ -680,31 +808,75 @@ class S3mini {
       throw new Error(`${C.ERROR_PREFIX}Unexpected listObjects response shape`);
     }
 
-    const out = (raw.ListBucketResult || raw.listBucketResult || raw) as Record<string, unknown>;
+    const out = (raw.ListVersionsResult ||
+      raw.listVersionsResult ||
+      raw.ListBucketResult ||
+      raw.listBucketResult ||
+      raw) as Record<string, unknown>;
     const objects = this._extractObjectsFromResponse(out);
-    const continuationToken = this._extractContinuationToken(out);
+    const continuationToken = versionsMode
+      ? this._extractVersionListToken(out)
+      : this._extractContinuationToken(out);
 
     return { objects, continuationToken };
   }
 
+  private _mapListEntry(item: Record<string, unknown>, isDeleteMarker = false): IT.ListObject {
+    const keyRaw = item.Key ?? item.key ?? '';
+    const key = typeof keyRaw === 'string' ? keyRaw : '';
+    const versionId = item.VersionId ?? item.versionId;
+    const isLatestRaw = item.IsLatest ?? item.isLatest;
+    const etagRaw = item.ETag ?? item.etag ?? item.eTag ?? '';
+    const storageRaw = item.StorageClass ?? item.storageClass ?? '';
+    const lmRaw = item.LastModified ?? item.lastModified ?? 0;
+    const entry: IT.ListObject = {
+      Key: key,
+      Size: Number(item.Size ?? item.size ?? 0),
+      LastModified: new Date(typeof lmRaw === 'string' || typeof lmRaw === 'number' ? lmRaw : 0),
+      ETag: typeof etagRaw === 'string' ? etagRaw : '',
+      StorageClass: typeof storageRaw === 'string' ? storageRaw : '',
+    };
+    if (typeof versionId === 'string' && versionId !== '') {
+      entry.VersionId = versionId;
+    }
+    if (isLatestRaw !== undefined && isLatestRaw !== null && isLatestRaw !== '') {
+      entry.IsLatest = isLatestRaw === true || isLatestRaw === 'true';
+    }
+    if (isDeleteMarker) {
+      entry.IsDeleteMarker = true;
+    }
+    return entry;
+  }
+
   private _extractObjectsFromResponse(response: Record<string, unknown>): IT.ListObject[] {
     const contents = response.Contents || response.contents; // S3 v2 vs v1
+    const versions = response.Version || response.version;
+    const deleteMarkers = response.DeleteMarker || response.deleteMarker;
     const commonPrefixes = response.CommonPrefixes || response.commonPrefixes;
 
     const objects: IT.ListObject[] = [];
 
-    // Extract regular objects from Contents
+    // Extract regular objects from Contents (ListObjects / ListObjectsV2)
     if (contents) {
       const raw = Array.isArray(contents) ? contents : [contents];
       for (const item of raw) {
-        const o = item as Record<string, string>;
-        objects.push({
-          Key: o.Key ?? o.key ?? '',
-          Size: Number(o.Size ?? o.size ?? 0),
-          LastModified: new Date(o.LastModified ?? o.lastModified ?? 0),
-          ETag: o.ETag ?? o.etag ?? '',
-          StorageClass: o.StorageClass ?? o.storageClass ?? '',
-        });
+        objects.push(this._mapListEntry(item as Record<string, unknown>));
+      }
+    }
+
+    // Extract versions from ListObjectVersions
+    if (versions) {
+      const raw = Array.isArray(versions) ? versions : [versions];
+      for (const item of raw) {
+        objects.push(this._mapListEntry(item as Record<string, unknown>, false));
+      }
+    }
+
+    // Extract delete markers from ListObjectVersions
+    if (deleteMarkers) {
+      const raw = Array.isArray(deleteMarkers) ? deleteMarkers : [deleteMarkers];
+      for (const item of raw) {
+        objects.push(this._mapListEntry(item as Record<string, unknown>, true));
       }
     }
 
@@ -720,7 +892,7 @@ class S3mini {
             LastModified: new Date(0),
             ETag: '',
             StorageClass: '',
-          } as IT.ListObject);
+          });
         }
       }
     }
@@ -739,6 +911,18 @@ class S3mini {
       response.nextContinuationToken ||
       response.NextMarker ||
       response.nextMarker) as string | undefined;
+  }
+
+  private _extractVersionListToken(response: Record<string, unknown>): string | undefined {
+    const truncated = response.IsTruncated === 'true' || response.isTruncated === 'true' || false;
+    if (!truncated) {
+      return undefined;
+    }
+
+    const keyMarker = (response.NextKeyMarker ?? response.nextKeyMarker ?? '') as string;
+    const versionIdMarker = (response.NextVersionIdMarker ?? response.nextVersionIdMarker ?? '') as string;
+    // Always encode when truncated so the next request can resume correctly
+    return this._encodeVersionListToken(String(keyMarker), String(versionIdMarker));
   }
 
   private async _bunListAll(
@@ -819,7 +1003,7 @@ class S3mini {
           LastModified: new Date(0),
           ETag: '',
           StorageClass: '',
-        } as IT.ListObject);
+        });
       }
     }
 
@@ -1686,6 +1870,7 @@ class S3mini {
    * @param {string} sourceKey - The key of the source object to copy
    * @param {string} destinationKey - The key where the object will be copied to
    * @param {IT.CopyObjectOptions} [options={}] - Copy operation options
+   * @param {string} [options.versionId] - Source object version to copy (for versioned buckets)
    * @param {string} [options.metadataDirective='COPY'] - How to handle metadata ('COPY' | 'REPLACE')
    * @param {Record<string,string>} [options.metadata={}] - New metadata (only used if metadataDirective='REPLACE')
    * @param {string} [options.contentType] - New content type for the destination object
@@ -1704,6 +1889,10 @@ class S3mini {
    * // Simple copy
    * const result = await s3.copyObject('report-2024.pdf', 'archive/report-2024.pdf');
    * console.log(`Copied with ETag: ${result.etag}`);
+   *
+   * @example
+   * // Restore an older version onto the same key
+   * await s3.copyObject('file.jpg', 'file.jpg', { versionId: 'older-version-id' });
    *
    * @example
    * // Copy with new metadata and content type
@@ -1741,7 +1930,10 @@ class S3mini {
     this._checkKey(sourceKey);
     this._checkKey(destinationKey);
 
-    const copySource = `/${this.bucketName}/${uriEscape(sourceKey)}`;
+    let copySource = `/${this.bucketName}/${uriEscape(sourceKey)}`;
+    if (options.versionId) {
+      copySource += `?versionId=${encodeURIComponent(options.versionId)}`;
+    }
 
     return this._executeCopyOperation(destinationKey, copySource, options);
   }
@@ -1851,12 +2043,19 @@ class S3mini {
 
   /**
    * Deletes an object from the bucket.
-   * This method sends a request to delete the specified object from the bucket.
-   * @param {string} key - The key of the object to delete.
+   * Accepts either a key string or a {@link IT.DeleteObject} with optional `versionId`
+   * for permanently removing a specific version on a versioned bucket.
+   * @param {string | IT.DeleteObject} target - Object key or `{ key, versionId? }`.
    * @returns A promise that resolves to true if the object was deleted successfully, false otherwise.
+   * @example
+   * await s3.deleteObject('file.jpg');
+   * await s3.deleteObject({ key: 'file.jpg', versionId: 'abc123' });
    */
-  public async deleteObject(key: string): Promise<boolean> {
-    if (this._bun) {
+  public async deleteObject(target: string | IT.DeleteObject): Promise<boolean> {
+    const { key, versionId } = this._normalizeDeleteTarget(target);
+
+    // Bun-native delete has no versionId support — fall through to HTTP when versioned
+    if (this._bun && !versionId) {
       try {
         await this._bun.file(key).delete();
       } catch (e) {
@@ -1864,22 +2063,54 @@ class S3mini {
       }
       return true;
     }
-    const res = await this._signedRequest('DELETE', key, { tolerated: [200, 204] });
+
+    const res = await this._signedRequest('DELETE', key, {
+      query: versionId ? { versionId } : {},
+      tolerated: [200, 204],
+    });
     return res.status === 200 || res.status === 204;
   }
 
-  private async _deleteObjectsProcess(keys: string[]): Promise<boolean[]> {
-    const out = await this._sendDeleteRequest(keys);
-
-    const resultMap = new Map<string, boolean>(keys.map(k => [k, false]));
-    this._markDeletedKeys(out, resultMap);
-    this._logDeleteErrors(out, resultMap);
-
-    return keys.map(key => resultMap.get(key) || false);
+  private _normalizeDeleteTarget(target: string | IT.DeleteObject): IT.DeleteObject {
+    if (typeof target === 'string') {
+      this._checkKey(target);
+      return { key: target };
+    }
+    if (!target || typeof target !== 'object' || typeof target.key !== 'string') {
+      this._log('error', `${C.ERROR_PREFIX}delete target must be a key string or { key, versionId? }`);
+      throw new TypeError(`${C.ERROR_PREFIX}delete target must be a key string or { key, versionId? }`);
+    }
+    this._checkKey(target.key);
+    if (target.versionId !== undefined && typeof target.versionId !== 'string') {
+      throw new TypeError(`${C.ERROR_PREFIX}versionId must be a string when provided`);
+    }
+    return {
+      key: target.key,
+      ...(target.versionId ? { versionId: target.versionId } : {}),
+    };
   }
 
-  private async _sendDeleteRequest(keys: string[]): Promise<Record<string, unknown>> {
-    const objectsXml = keys.map(key => `<Object><Key>${escapeXml(key)}</Key></Object>`).join('');
+  private _deleteTargetId(target: IT.DeleteObject): string {
+    return target.versionId ? `${target.key}\0${target.versionId}` : target.key;
+  }
+
+  private async _deleteObjectsProcess(targets: IT.DeleteObject[]): Promise<boolean[]> {
+    const out = await this._sendDeleteRequest(targets);
+    const ids = targets.map(t => this._deleteTargetId(t));
+    const resultMap = new Map<string, boolean>(ids.map(id => [id, false]));
+    this._markDeletedKeys(out, resultMap, targets);
+    this._logDeleteErrors(out, resultMap);
+
+    return ids.map(id => resultMap.get(id) || false);
+  }
+
+  private async _sendDeleteRequest(targets: IT.DeleteObject[]): Promise<Record<string, unknown>> {
+    const objectsXml = targets
+      .map(t => {
+        const versionXml = t.versionId ? `<VersionId>${escapeXml(t.versionId)}</VersionId>` : '';
+        return `<Object><Key>${escapeXml(t.key)}</Key>${versionXml}</Object>`;
+      })
+      .join('');
     const xmlBody = '<Delete>' + objectsXml + '</Delete>';
     const sha256base64 = base64FromBuffer(await sha256(xmlBody));
 
@@ -1901,7 +2132,11 @@ class S3mini {
     return (parsed.DeleteResult || parsed.deleteResult || parsed) as Record<string, unknown>;
   }
 
-  private _markDeletedKeys(out: Record<string, unknown>, resultMap: Map<string, boolean>): void {
+  private _markDeletedKeys(
+    out: Record<string, unknown>,
+    resultMap: Map<string, boolean>,
+    targets: IT.DeleteObject[],
+  ): void {
     const deleted = out.deleted || out.Deleted;
     if (!deleted) {
       return;
@@ -1909,10 +2144,37 @@ class S3mini {
 
     const items = Array.isArray(deleted) ? deleted : [deleted];
     for (const item of items) {
-      if (item && typeof item === 'object') {
-        const key = (item as Record<string, unknown>).key || (item as Record<string, unknown>).Key;
-        if (key && typeof key === 'string') {
-          resultMap.set(key, true);
+      if (!item || typeof item !== 'object') {
+        continue;
+      }
+      const obj = item as Record<string, unknown>;
+      const key = obj.key || obj.Key;
+      if (!key || typeof key !== 'string') {
+        continue;
+      }
+      const versionId = (obj.versionId || obj.VersionId) as string | undefined;
+      const compositeId = versionId ? `${key}\0${versionId}` : key;
+
+      if (resultMap.has(compositeId)) {
+        resultMap.set(compositeId, true);
+        continue;
+      }
+
+      // Match first pending request for this key (+ version when response has one)
+      for (const t of targets) {
+        if (t.key !== key) {
+          continue;
+        }
+        if (versionId && t.versionId && t.versionId !== versionId) {
+          continue;
+        }
+        if (!versionId && t.versionId) {
+          continue;
+        }
+        const id = this._deleteTargetId(t);
+        if (resultMap.get(id) === false) {
+          resultMap.set(id, true);
+          break;
         }
       }
     }
@@ -1929,9 +2191,15 @@ class S3mini {
       if (item && typeof item === 'object') {
         const obj = item as Record<string, unknown>;
         const key = obj.key || obj.Key;
+        const versionId = (obj.versionId || obj.VersionId) as string | undefined;
         if (key && typeof key === 'string') {
-          resultMap.set(key, false);
-          this._log('warn', `Failed to delete object: ${key}`, {
+          const id = versionId ? `${key}\0${versionId}` : key;
+          if (resultMap.has(id)) {
+            resultMap.set(id, false);
+          } else if (resultMap.has(key)) {
+            resultMap.set(key, false);
+          }
+          this._log('warn', `Failed to delete object: ${key}${versionId ? ` version ${versionId}` : ''}`, {
             code: obj.code || obj.Code || 'Unknown',
             message: obj.message || obj.Message || 'Unknown error',
           });
@@ -1942,26 +2210,29 @@ class S3mini {
 
   /**
    * Deletes multiple objects from the bucket.
-   * @param {string[]} keys - An array of object keys to delete.
-   * @returns A promise that resolves to an array of booleans indicating success for each key in order.
+   * Each entry may be a key string or a {@link IT.DeleteObject} with optional `versionId`.
+   * @param {Array<string | IT.DeleteObject>} targets - Objects to delete.
+   * @returns A promise that resolves to an array of booleans indicating success for each target in order.
+   * @example
+   * await s3.deleteObjects(['a.txt', { key: 'b.txt', versionId: 'v1' }]);
    */
-  public async deleteObjects(keys: string[]): Promise<boolean[]> {
-    if (!Array.isArray(keys) || keys.length === 0) {
+  public async deleteObjects(targets: Array<string | IT.DeleteObject>): Promise<boolean[]> {
+    if (!Array.isArray(targets) || targets.length === 0) {
       return [];
     }
+    const normalized = targets.map(t => this._normalizeDeleteTarget(t));
     const maxBatchSize = 1000; // S3 limit for delete batch size
-    if (keys.length > maxBatchSize) {
+    if (normalized.length > maxBatchSize) {
       const allPromises = [];
-      for (let i = 0; i < keys.length; i += maxBatchSize) {
-        const batch = keys.slice(i, i + maxBatchSize);
+      for (let i = 0; i < normalized.length; i += maxBatchSize) {
+        const batch = normalized.slice(i, i + maxBatchSize);
         allPromises.push(this._deleteObjectsProcess(batch));
       }
       const results = await Promise.all(allPromises);
       // Flatten the results array
       return results.flat();
-    } else {
-      return await this._deleteObjectsProcess(keys);
     }
+    return await this._deleteObjectsProcess(normalized);
   }
 
   private async _sendRequest(

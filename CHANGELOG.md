@@ -1,5 +1,18 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Object versioning support (issue #3):
+  - `setBucketVersioning` / `getBucketVersioning` (Put/GetBucketVersioning).
+  - `listObjects` / `listObjectsPaged` accept `{ versions: true }` and parse `ListVersionsResult` (`Version` + `DeleteMarker` entries with optional `VersionId`, `IsLatest`, `IsDeleteMarker`).
+  - New `listObjectVersions(key)` returns all versions for a specific object key (exact match), including which entry is latest.
+  - `copyObject` accepts optional `versionId` on `CopyObjectOptions` (appended to `x-amz-copy-source`) for restore-by-copy.
+  - `deleteObject` / `deleteObjects` accept `DeleteObject` (`{ key, versionId? }`) in addition to string keys; bulk delete XML includes `<VersionId>` when set.
+- Exported types: `ListObject`, `DeleteObject`, `CopyObjectOptions`, `CopyObjectResult`.
+- E2E: real versioning lifecycle test (enable bucket → multi-put → list/get/copy-restore → versioned delete) against live providers; MinIO global setup enables versioning.
+
 ## [1.0.0] - 2026-07-28
 
 ### Added

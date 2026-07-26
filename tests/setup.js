@@ -5,6 +5,7 @@ dotenv.config();
 
 import { join } from 'node:path';
 import { composeUp, composeUpWait, execDockerCommand } from './docker.js';
+import { S3mini } from '../dist/index.mjs';
 
 import { promisify } from 'util';
 import { exec } from 'child_process';
@@ -213,6 +214,38 @@ const bucketConfigs = Object.keys(process.env)
     return { provider, accessKeyId, secretAccessKey, endpoint, region };
   });
 
+/**
+ * Ensure the MinIO bucket exists and has versioning enabled so E2E versioning
+ * tests exercise a real ListObjectVersions / versioned copy-delete path.
+ */
+async function minioEnableVersioning(cfg) {
+  const s3 = new S3mini({
+    accessKeyId: cfg.accessKeyId,
+    secretAccessKey: cfg.secretAccessKey,
+    endpoint: cfg.endpoint,
+    region: cfg.region || 'us-east-1',
+  });
+
+  // Bucket may not exist yet on a fresh volume
+  try {
+    const exists = await s3.bucketExists();
+    if (!exists) {
+      await s3.createBucket();
+      console.log(`✅ MinIO bucket created for versioning tests`);
+    }
+  } catch (err) {
+    // createBucket can 409 if it already exists; continue
+    console.warn(`MinIO bucketExists/createBucket: ${err.message || err}`);
+  }
+
+  const ok = await s3.setBucketVersioning('Enabled');
+  if (!ok) {
+    throw new Error('Failed to enable MinIO bucket versioning');
+  }
+  const status = await s3.getBucketVersioning();
+  console.log(`✅ MinIO bucket versioning: ${status}`);
+}
+
 export default async () => {
   for (const cfg of bucketConfigs) {
     const composeFile = composeFiles[cfg.provider];
@@ -223,6 +256,7 @@ export default async () => {
         process.env.MINIO_ROOT_USER = cfg.accessKeyId;
         process.env.MINIO_ROOT_PASSWORD = cfg.secretAccessKey;
         await composeUpWait(composeFile);
+        await minioEnableVersioning(cfg);
         break;
       case 'garage':
         await composeUp(composeFile);

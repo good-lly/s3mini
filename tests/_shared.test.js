@@ -1493,6 +1493,142 @@ export const testRunner = bucket => {
     await s3client.deleteObjects(objects.map(o => o.Key));
   });
 
+  // Providers that do not implement S3 object versioning APIs:
+  // - garage: no versioning at all
+  // - cloudflare R2: emits x-amz-version-id on Put for S3 client compat, but
+  //   ListObjectVersions / GetObject?versionId / PutBucketVersioning all return 501
+  //   (confirmed against live R2; see Cloudflare S3 API compatibility docs).
+  const versioningUnsupported = new Set(['garage', 'cloudflare']);
+  (versioningUnsupported.has(providerName) ? it.skip : it)(
+    'object versioning: full lifecycle against real bucket',
+    async () => {
+      const isNotImplemented = err => {
+        const code = err?.code || err?.svcCode || '';
+        const msg = String(err?.message || err || '');
+        const status = err?.status ?? err?.statusCode;
+        return (
+          status === 501 ||
+          code === 'NotImplemented' ||
+          /501|NotImplemented/i.test(msg)
+        );
+      };
+      const isRealVersionId = id => typeof id === 'string' && id.length > 0 && id !== 'null';
+
+      // Optional: enable when the control-plane API exists (MinIO/AWS).
+      // B2 returns 403 AccessDenied here but still versions objects — that is fine.
+      try {
+        await s3client.setBucketVersioning('Enabled');
+      } catch (err) {
+        if (!isNotImplemented(err) && !(err?.status === 403 || /403|AccessDenied/i.test(String(err?.message)))) {
+          console.warn(
+            `[${providerName}] setBucketVersioning failed (${err.message || err}); continuing if object APIs work`,
+          );
+        }
+      }
+
+      const key = `versioning-test-${Date.now()}.txt`;
+      const v1Body = 'version-one-body';
+      const v2Body = 'version-two-body';
+
+      const put1 = await s3client.putObject(key, v1Body, 'text/plain');
+      expect(put1.status).toBe(200);
+      const put2 = await s3client.putObject(key, v2Body, 'text/plain');
+      expect(put2.status).toBe(200);
+
+      const id1 = put1.headers.get('x-amz-version-id');
+      const id2 = put2.headers.get('x-amz-version-id');
+
+      if (!isRealVersionId(id1) || !isRealVersionId(id2) || id1 === id2) {
+        try {
+          await s3client.deleteObject(key);
+        } catch {
+          /* ignore */
+        }
+        throw new Error(
+          `[${providerName}] Bucket is not versioned (put x-amz-version-id: ${id1}, ${id2}). ` +
+            `Enable object versioning on this bucket (MinIO setup enables it automatically).`,
+        );
+      }
+
+      // Prove versioning is real (not just compatibility headers like R2).
+      // Get-by-versionId must return the older body before we exercise list/copy/delete.
+      let oldByVersion;
+      try {
+        oldByVersion = await s3client.getObject(key, { versionId: id1 });
+      } catch (err) {
+        try {
+          await s3client.deleteObject(key);
+        } catch {
+          /* ignore */
+        }
+        if (isNotImplemented(err)) {
+          throw new Error(
+            `[${providerName}] Returns x-amz-version-id on Put but GetObject?versionId is NotImplemented. ` +
+              `Add this provider to versioningUnsupported (Cloudflare R2 is in that set).`,
+          );
+        }
+        throw err;
+      }
+      expect(oldByVersion).toBe(v1Body);
+      expect(await s3client.getObject(key, { versionId: id2 })).toBe(v2Body);
+      expect(await s3client.getObject(key)).toBe(v2Body);
+
+      // listObjectVersions for this exact key
+      const versions = await s3client.listObjectVersions(key);
+      expect(versions).not.toBeNull();
+      expect(versions.length).toBeGreaterThanOrEqual(2);
+      expect(versions.every(v => v.Key === key)).toBe(true);
+      expect(versions.some(v => v.VersionId === id1)).toBe(true);
+      expect(versions.some(v => v.VersionId === id2)).toBe(true);
+
+      const latest = versions.find(v => v.IsLatest && !v.IsDeleteMarker);
+      expect(latest).toBeDefined();
+      // Latest should be the second put (id2) when IsLatest is populated
+      if (latest.VersionId) {
+        expect(latest.VersionId).toBe(id2);
+      }
+
+      // listObjects({ versions: true }) also surfaces version metadata
+      const listed = await s3client.listObjects('/', key, undefined, { versions: true });
+      expect(listed.filter(o => o.Key === key).length).toBeGreaterThanOrEqual(2);
+      expect(listed.some(o => o.Key === key && o.VersionId === id1)).toBe(true);
+
+      // restore older version by copy onto same key
+      const copyResult = await s3client.copyObject(key, key, { versionId: id1 });
+      expect(copyResult.etag).toBeDefined();
+      expect(await s3client.getObject(key)).toBe(v1Body);
+
+      const afterRestore = await s3client.listObjectVersions(key);
+      expect(afterRestore.length).toBeGreaterThanOrEqual(2);
+      expect(afterRestore.find(v => v.IsLatest && !v.IsDeleteMarker)).toBeDefined();
+
+      // permanently delete one non-latest version
+      const toDelete = afterRestore.find(
+        v => !v.IsLatest && !v.IsDeleteMarker && isRealVersionId(v.VersionId),
+      );
+      expect(toDelete).toBeDefined();
+      expect(await s3client.deleteObject({ key, versionId: toDelete.VersionId })).toBe(true);
+
+      const afterSingleDelete = await s3client.listObjectVersions(key);
+      expect(
+        afterSingleDelete.some(v => v.VersionId === toDelete.VersionId && !v.IsDeleteMarker),
+      ).toBe(false);
+
+      // bulk-delete every remaining version (+ delete markers) by VersionId
+      const remaining = await s3client.listObjectVersions(key);
+      const versionedTargets = remaining
+        .filter(v => isRealVersionId(v.VersionId))
+        .map(v => ({ key: v.Key, versionId: v.VersionId }));
+      expect(versionedTargets.length).toBeGreaterThan(0);
+      const bulkResults = await s3client.deleteObjects(versionedTargets);
+      expect(bulkResults).toHaveLength(versionedTargets.length);
+      expect(bulkResults.every(Boolean)).toBe(true);
+
+      const finalVersions = await s3client.listObjectVersions(key);
+      const live = finalVersions.filter(v => !v.IsDeleteMarker);
+      expect(live).toHaveLength(0);
+    },
+  );
 
   it('lists objects with pagination', async () => {
     /* ----- test data setup ----- */
