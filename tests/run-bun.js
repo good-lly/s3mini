@@ -10,7 +10,7 @@ await setup();
 const exitCode = await new Promise(resolve => {
   const child = spawn(
     'bun',
-    ['test', '--timeout', '220000', '--parallel', '8', '--isolate', ...args],
+    ['test', '--timeout', '220000', '--parallel', '8', '--isolate', '--bail', ...args],
     { stdio: 'inherit', cwd: process.cwd() },
   );
   child.on('close', resolve);

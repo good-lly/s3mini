@@ -246,6 +246,45 @@ async function minioEnableVersioning(cfg) {
   console.log(`✅ MinIO bucket versioning: ${status}`);
 }
 
+/**
+ * Reclaim non-current object versions and delete markers left on a versioned bucket.
+ *
+ * Every cleanup in the suite deletes by key, which on a versioned bucket only adds a delete marker
+ * — the old versions stay in the bucket index and listObjects() stops showing them, so the debris
+ * is invisible and grows by ~2 entries per key per CI run until the provider starts answering the
+ * parallel upload tests with 503 SlowDown.
+ *
+ * This runs in globalSetup rather than a beforeAll hook on purpose: on a bucket that has been
+ * accumulating for a while it is tens of thousands of deletes, which would blow jest's per-test
+ * timeout. globalSetup is not on that clock.
+ */
+async function purgeObjectVersions(cfg) {
+  const s3 = new S3mini({
+    accessKeyId: cfg.accessKeyId,
+    secretAccessKey: cfg.secretAccessKey,
+    endpoint: cfg.endpoint,
+    region: cfg.region,
+  });
+
+  let listed;
+  try {
+    listed = await s3.listObjects('/', '', undefined, { versions: true });
+  } catch (err) {
+    // Providers without ListObjectVersions (R2 answers 501, garage has no versioning) have nothing
+    // to purge — anything else is worth seeing in the log rather than swallowing.
+    console.warn(`🧹 ${cfg.provider}: version purge skipped — ${err.message || err}`);
+    return;
+  }
+
+  const targets = (listed ?? [])
+    .filter(o => o.VersionId && o.VersionId !== 'null')
+    .map(o => ({ key: o.Key, versionId: o.VersionId }));
+  if (targets.length === 0) return;
+
+  await s3.deleteObjects(targets);
+  console.log(`🧹 ${cfg.provider}: purged ${targets.length} object versions / delete markers`);
+}
+
 export default async () => {
   for (const cfg of bucketConfigs) {
     const composeFile = composeFiles[cfg.provider];
@@ -272,4 +311,13 @@ export default async () => {
     //   await cephInit();
     // }
   }
+
+  // Re-read the env: garageInit() publishes BUCKET_ENV_GARAGE only once its container is up.
+  const configured = Object.keys(process.env)
+    .filter(k => k.startsWith('BUCKET_ENV_'))
+    .map(k => {
+      const [provider, accessKeyId, secretAccessKey, endpoint, region] = process.env[k].split(',');
+      return { provider, accessKeyId, secretAccessKey, endpoint, region };
+    });
+  await Promise.all(configured.map(purgeObjectVersions));
 };

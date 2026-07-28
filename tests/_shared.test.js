@@ -107,6 +107,28 @@ const specialCharContentString = 'Hello, world! \uD83D\uDE00';
 const specialCharContentBufferExtra = Buffer.from(specialCharContentString + ' extra', 'utf-8');
 const specialCharKey = 'special-char key with spaces.txt';
 
+// Deleting by key on a versioned bucket only adds a delete marker — the old versions stay in the
+// bucket index and listObjects() stops showing them, so the rot is invisible. Used here for the
+// prefixes this suite creates in bulk; the whole-bucket sweep lives in tests/setup.js, off jest's
+// per-test clock.
+const purgeVersions = async (s3client, prefix = '') => {
+  let listed;
+  try {
+    listed = await s3client.listObjects('/', prefix, undefined, { versions: true });
+  } catch (err) {
+    // Providers without ListObjectVersions (R2 answers 501, garage has no versioning) have
+    // nothing to purge — anything else is worth seeing in the log.
+    console.warn(`[${providerName}] version purge skipped: ${err?.message || err}`);
+    return;
+  }
+  const targets = (listed ?? [])
+    .filter(o => o.VersionId && o.VersionId !== 'null')
+    .map(o => ({ key: o.Key, versionId: o.VersionId }));
+  if (targets.length > 0) {
+    await s3client.deleteObjects(targets);
+  }
+};
+
 export const resetBucketBeforeAll = s3client => {
   beforeAll(async () => {
     let exists;
@@ -1514,16 +1536,25 @@ export const testRunner = bucket => {
       };
       const isRealVersionId = id => typeof id === 'string' && id.length > 0 && id !== 'null';
 
-      // Optional: enable when the control-plane API exists (MinIO/AWS).
-      // B2 returns 403 AccessDenied here but still versions objects — that is fine.
+      // This test never enables versioning itself. S3 has no way to turn versioning back off (only
+      // Suspended), so flipping a shared provider bucket here would make every later run accumulate
+      // versions permanently. MinIO is enabled in tests/setup.js and always covers this path; other
+      // providers only take part if their bucket is already versioned.
+      let versioningStatus;
       try {
-        await s3client.setBucketVersioning('Enabled');
+        versioningStatus = await s3client.getBucketVersioning();
       } catch (err) {
-        if (!isNotImplemented(err) && !(err?.status === 403 || /403|AccessDenied/i.test(String(err?.message)))) {
-          console.warn(
-            `[${providerName}] setBucketVersioning failed (${err.message || err}); continuing if object APIs work`,
-          );
+        if (!isNotImplemented(err)) {
+          throw err;
         }
+        versioningStatus = 'Off';
+      }
+      if (versioningStatus !== 'Enabled') {
+        console.warn(
+          `[${providerName}] SKIP versioning lifecycle: bucket versioning is '${versioningStatus}'. ` +
+            `Enable it out-of-band on this bucket to opt in.`,
+        );
+        return;
       }
 
       const key = `versioning-test-${Date.now()}.txt`;
@@ -1596,11 +1627,16 @@ export const testRunner = bucket => {
       // restore older version by copy onto same key
       const copyResult = await s3client.copyObject(key, key, { versionId: id1 });
       expect(copyResult.etag).toBeDefined();
-      expect(isRealVersionId(copyResult.versionId)).toBe(true);
+      // Ceph RGW creates the new version but sends no x-amz-version-id on CopyObject responses
+      // (verified against ceph v17 RGW), so the id is only asserted where the provider reports it.
+      // The restore itself is proven below: a new version exists and it serves the older body.
+      if (copyResult.versionId !== undefined) {
+        expect(isRealVersionId(copyResult.versionId)).toBe(true);
+      }
       expect(await s3client.getObject(key)).toBe(v1Body);
 
       const afterRestore = await s3client.listObjectVersions(key);
-      expect(afterRestore.length).toBeGreaterThanOrEqual(2);
+      expect(afterRestore.length).toBeGreaterThan(versions.length);
       expect(afterRestore.find(v => v.IsLatest && !v.IsDeleteMarker)).toBeDefined();
 
       // permanently delete one non-latest version
@@ -1732,6 +1768,10 @@ export const testRunner = bucket => {
 
     // Verify bucket now empty for this prefix
     expect(await s3client.listObjects('/', prefix)).toEqual([]);
+
+    // The 1 114 keys above are the suite's biggest source of leftover versions on a versioned
+    // bucket — reclaim them instead of leaving 2 index entries per key behind.
+    await purgeVersions(s3client, prefix);
   });
 
   it('listObjects returns correct types for Size (number) and LastModified (Date)', async () => {

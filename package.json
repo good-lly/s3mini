@@ -25,7 +25,7 @@
     "typecheck": "tsc --noEmit",
     "test:unit": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.unit.js",
     "test:public": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.public.js --verbose",
-    "test:providers": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.config.js --verbose",
+    "test:providers": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.config.js --verbose --bail",
     "test:e2e": "npm run test:public && npm run test:providers",
     "test:unit:bun": "bun test tests/presigned-url.test.js tests/extract-bucket-name.test.js",
     "test:public:bun": "bun test tests/anonymous-access.test.js",
