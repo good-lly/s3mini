@@ -207,12 +207,28 @@ async function garageInit(containerName = 'garage') {
   }
 }
 
-const bucketConfigs = Object.keys(process.env)
-  .filter(k => k.startsWith('BUCKET_ENV_'))
-  .map(k => {
-    const [provider, accessKeyId, secretAccessKey, endpoint, region] = process.env[k].split(',');
-    return { provider, accessKeyId, secretAccessKey, endpoint, region };
-  });
+/**
+ * Read every BUCKET_ENV_* into a config, dropping the ones that cannot produce a client.
+ *
+ * A variable that is set but blank or truncated — a CI secret that did not resolve — parses into a
+ * config with no credentials, and the S3mini constructor rejects those. Thrown from globalSetup
+ * that aborts the whole run before a single test executes, so skip them here instead; the warning
+ * keeps a silently absent provider from looking like a passing suite.
+ */
+const readBucketConfigs = () =>
+  Object.keys(process.env)
+    .filter(k => k.startsWith('BUCKET_ENV_'))
+    .map(k => {
+      const [provider, accessKeyId, secretAccessKey, endpoint, region] = process.env[k].split(',');
+      return { envKey: k, provider, accessKeyId, secretAccessKey, endpoint, region };
+    })
+    .filter(cfg => {
+      if (cfg.provider && cfg.accessKeyId && cfg.secretAccessKey && cfg.endpoint) return true;
+      console.warn(`⚠️  ${cfg.envKey} is set but incomplete — skipping (want provider,key,secret,endpoint,region)`);
+      return false;
+    });
+
+const bucketConfigs = readBucketConfigs();
 
 /**
  * Ensure the MinIO bucket exists and has versioning enabled so E2E versioning
@@ -259,14 +275,16 @@ async function minioEnableVersioning(cfg) {
  * timeout. globalSetup is not on that clock.
  */
 async function purgeObjectVersions(cfg) {
-  const s3 = new S3mini({
-    accessKeyId: cfg.accessKeyId,
-    secretAccessKey: cfg.secretAccessKey,
-    endpoint: cfg.endpoint,
-    region: cfg.region,
-  });
-
   try {
+    // Inside the try on purpose: the constructor validates, so a config that slipped past the
+    // filter must degrade to a skipped purge rather than abort globalSetup and the whole run.
+    const s3 = new S3mini({
+      accessKeyId: cfg.accessKeyId,
+      secretAccessKey: cfg.secretAccessKey,
+      endpoint: cfg.endpoint,
+      region: cfg.region,
+    });
+
     const listed = await s3.listObjects('/', '', undefined, { versions: true });
     // Keep only what is live: the newest version of a key that is not a delete marker. Everything
     // else is debris — superseded versions, plus delete markers (removing a latest marker together
@@ -316,11 +334,5 @@ export default async () => {
   }
 
   // Re-read the env: garageInit() publishes BUCKET_ENV_GARAGE only once its container is up.
-  const configured = Object.keys(process.env)
-    .filter(k => k.startsWith('BUCKET_ENV_'))
-    .map(k => {
-      const [provider, accessKeyId, secretAccessKey, endpoint, region] = process.env[k].split(',');
-      return { provider, accessKeyId, secretAccessKey, endpoint, region };
-    });
-  await Promise.all(configured.map(purgeObjectVersions));
+  await Promise.all(readBucketConfigs().map(purgeObjectVersions));
 };
