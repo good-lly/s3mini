@@ -84,6 +84,43 @@ if (!nativeBun || !raw) {
       expect(grouped.map(o => o.Key).sort()).toEqual([key, `${prefix}sub/`].sort());
     });
 
+    /**
+     * A bucket that is not there is a 404 on every read, and every signed reader tolerates 404 and
+     * answers null. Bun raises a typed error instead, so the mapping has to agree: matching only
+     * NoSuchKey left getObject() throwing here while returning null on the signed path.
+     */
+    it('answers null for a bucket that is not there, exactly as the signed path does', async () => {
+      const absent = new URL(ownBucket);
+      absent.pathname = `/s3mini-absent-${Date.now()}`;
+      const nativeAbsent = new S3mini({ ...cfg, endpoint: absent.toString() });
+      const signedAbsent = new S3mini({ ...signedCfg, endpoint: absent.toString() });
+
+      // Guard the guard: if the native client were declined here the parity below proves nothing.
+      expect(nativeAbsent._bun).toBeDefined();
+      expect(signedAbsent._bun).toBeUndefined();
+
+      for (const read of [c => c.listObjects(), c => c.getObject(key), c => c.getObjectArrayBuffer(key)]) {
+        expect(await read(nativeAbsent)).toBeNull();
+        expect(await read(signedAbsent)).toBeNull();
+      }
+      expect(await nativeAbsent.bucketExists()).toBe(false);
+      expect(await nativeAbsent.objectExists(key)).toBe(false);
+    });
+
+    it('declines the native client when the endpoint reaches past the bucket', async () => {
+      // Bun takes an origin plus a bucket name, so '/bucket/prefix' collapses to '/bucket'. The
+      // native client served the parent bucket's objects for this config instead of reporting
+      // nothing there — a silent read of the wrong location, so it has to stay on signed requests.
+      const nested = new S3mini({ ...cfg, endpoint: `${cfg.endpoint}/not-a-bucket` });
+
+      expect(nested._bun).toBeUndefined();
+      expect(nested.bucketName).toBe(native.bucketName);
+      expect(await nested.listObjects()).toBeNull();
+      expect(await nested.getObject(key)).toBeNull();
+      // The key really is in the parent bucket, which is what makes the null above meaningful.
+      expect(await native.getObject(key)).toBe(content);
+    });
+
     // A real multi-page listing needs >1000 objects (see the pagination e2e); these drive the
     // native client with a stub so the cursor logic is checked without the upload.
     const withStubbedList = pages => {

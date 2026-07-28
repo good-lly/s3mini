@@ -103,20 +103,26 @@ class S3mini {
     // bypassed: only take the native path when the default fetch is in use. It also refuses empty
     // credentials, which anonymous access to public buckets relies on.
     if (isBun && fetch === globalThis.fetch && this._hasCredentials()) {
-      const { S3Client } = (
-        globalThis as unknown as { Bun: { S3Client: new (o: Record<string, unknown>) => IT.NativeS3Client } }
-      ).Bun;
-      // Bucket in the path means path-style; otherwise it is in the host and Bun has to be told,
-      // or it would repeat the bucket in the path (bucket.host/bucket/key).
-      const pathStyle = this.endpoint.pathname.split('/').some(Boolean);
-      this._bun = new S3Client({
-        accessKeyId,
-        secretAccessKey,
-        endpoint: this.endpoint.origin,
-        region: this.region,
-        bucket: this.bucketName,
-        virtualHostedStyle: !pathStyle,
-      });
+      // Bun's client is an origin plus a bucket name, so an endpoint carrying anything past the
+      // bucket (host/bucket/prefix) cannot be expressed: the extra segments would be dropped and
+      // every native request would silently land in the parent bucket, while the signed path stays
+      // inside the prefix. Decline the native path rather than read and write the wrong location.
+      const segments = this.endpoint.pathname.split('/').filter(Boolean);
+      if (segments.length < 2) {
+        const { S3Client } = (
+          globalThis as unknown as { Bun: { S3Client: new (o: Record<string, unknown>) => IT.NativeS3Client } }
+        ).Bun;
+        this._bun = new S3Client({
+          accessKeyId,
+          secretAccessKey,
+          endpoint: this.endpoint.origin,
+          region: this.region,
+          bucket: this.bucketName,
+          // Bucket in the path means path-style; otherwise it is in the host and Bun has to be
+          // told, or it would repeat the bucket in the path (bucket.host/bucket/key).
+          virtualHostedStyle: segments.length === 0,
+        });
+      }
     }
   }
 
@@ -208,12 +214,21 @@ class S3mini {
     return new S3ServiceError(message, status, err.code, err.message);
   }
 
-  /** Run a read op via Bun-native S3, returning null on NoSuchKey. */
+  /** True for a Bun S3Error the signed path would have absorbed as a tolerated 404. */
+  private _isBunNotFound(e: unknown): boolean {
+    const code = (e as { code?: string })?.code;
+    return !!code && C.S3_CODE_STATUS[code] === 404;
+  }
+
+  /** Run a read op via Bun-native S3, returning null when the object or its bucket is absent. */
   private async _bunRead<T>(key: string, op: (f: IT.NativeS3File) => Promise<T>): Promise<T | null> {
     try {
       return await op(this._bun!.file(key));
     } catch (e) {
-      if ((e as { code?: string })?.code === 'NoSuchKey') {
+      // Every signed reader tolerates 404 and answers null, so match on the status the code maps
+      // to rather than on NoSuchKey alone: a missing *bucket* is equally a 404, and singling out
+      // the key left it throwing here while returning null on the signed path.
+      if (this._isBunNotFound(e)) {
         return null;
       }
       throw this._bunError(e);
@@ -565,7 +580,7 @@ class S3mini {
    * @param {string} [prefix=''] - The prefix to filter objects by.
    * @param {number} [maxKeys] - The maximum number of keys to return. If not provided, all keys will be returned.
    * @param {Record<string, unknown>} [opts={}] - Additional options for the request. Use `{ versions: true }` for version listing.
-   * @returns {Promise<IT.ListObject[] | null>} A promise that resolves to an array of objects or null if the bucket is empty.
+   * @returns {Promise<IT.ListObject[] | null>} A promise that resolves to an array of objects, or null if the bucket does not exist. An empty bucket resolves to an empty array.
    * @example
    * // List all objects
    * const objects = await s3.listObjects();
@@ -628,7 +643,7 @@ class S3mini {
    * @param {number} [maxKeys] - The maximum number of keys to return. Uses a default value of 100.
    * @param {string} [nextContinuationToken] - The nextContinuationToken to continue previous results. If not provided, starts from the beginning.
    * @param {Record<string, unknown>} [opts={}] - Additional options for the request. Use `{ versions: true }` for version listing.
-   * @returns {Promise<{objects: IT.ListObject[] | null; nextContinuationToken?: string } | undefined | null>} A promise that resolves to an array of objects or null if the bucket is empty, along with nextContinuationToken if there are more reccords.
+   * @returns {Promise<{objects: IT.ListObject[] | null; nextContinuationToken?: string } | undefined | null>} A promise that resolves to an array of objects, along with nextContinuationToken if there are more reccords, or null if the bucket does not exist.
    * @example
    * // List all objects
    * const { objects, nextContinuationToken } = await s3.listObjectsPaged();
@@ -956,7 +971,9 @@ class S3mini {
         }
       } while (token && remaining > 0);
     } catch (e) {
-      if ((e as { code?: string })?.code === 'NoSuchBucket') {
+      // _fetchObjectBatch tolerates 404 whatever the provider calls it, so a bucket addressed
+      // through a path the provider reads as a key (NoSuchKey) must land on null here too.
+      if (this._isBunNotFound(e)) {
         return null;
       }
       throw this._bunError(e);

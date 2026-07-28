@@ -266,23 +266,26 @@ async function purgeObjectVersions(cfg) {
     region: cfg.region,
   });
 
-  let listed;
   try {
-    listed = await s3.listObjects('/', '', undefined, { versions: true });
+    const listed = await s3.listObjects('/', '', undefined, { versions: true });
+    // Keep only what is live: the newest version of a key that is not a delete marker. Everything
+    // else is debris — superseded versions, plus delete markers (removing a latest marker together
+    // with the versions it hides retires the key completely). Without the IsLatest guard this
+    // deletes current objects too, i.e. wipes the bucket rather than reclaiming it.
+    const targets = (listed ?? [])
+      .filter(o => o.VersionId && o.VersionId !== 'null' && !(o.IsLatest && !o.IsDeleteMarker))
+      .map(o => ({ key: o.Key, versionId: o.VersionId }));
+    if (targets.length === 0) return;
+
+    await s3.deleteObjects(targets);
+    console.log(`🧹 ${cfg.provider}: purged ${targets.length} object versions / delete markers`);
   } catch (err) {
-    // Providers without ListObjectVersions (R2 answers 501, garage has no versioning) have nothing
-    // to purge — anything else is worth seeing in the log rather than swallowing.
+    // Housekeeping must never take the run down with it. Providers without ListObjectVersions
+    // answer 501 (R2) or have no versioning (garage), and a bulk versioned delete against a
+    // rate-limited remote bucket can drop the socket mid-flight. The suite's own per-test
+    // cleanup still runs either way — only the reclaim is lost.
     console.warn(`🧹 ${cfg.provider}: version purge skipped — ${err.message || err}`);
-    return;
   }
-
-  const targets = (listed ?? [])
-    .filter(o => o.VersionId && o.VersionId !== 'null')
-    .map(o => ({ key: o.Key, versionId: o.VersionId }));
-  if (targets.length === 0) return;
-
-  await s3.deleteObjects(targets);
-  console.log(`🧹 ${cfg.provider}: purged ${targets.length} object versions / delete markers`);
 }
 
 export default async () => {

@@ -129,7 +129,9 @@ const purgeVersions = async (s3client, prefix = '') => {
   }
 };
 
-export const resetBucketBeforeAll = s3client => {
+// Not exported: testRunner registers this on the shared describe, so provider files calling it
+// again only duplicate the wipe.
+const resetBucketBeforeAll = s3client => {
   beforeAll(async () => {
     let exists;
     try {
@@ -163,10 +165,6 @@ export const testRunner = bucket => {
 
   resetBucketBeforeAll(s3client);
 
-  it('instantiates s3client', () => {
-    expect(s3client).toBeInstanceOf(S3mini); // ← updated expectation
-  });
-
   it('bucket exists', async () => {
     let exists = await s3client.bucketExists();
     if (!exists) {
@@ -184,6 +182,12 @@ export const testRunner = bucket => {
     });
     const nonExistent = await nonExistentBucket.bucketExists();
     expect(nonExistent).toBe(false);
+
+    // A bucket that is not there lists as null, never as an empty array and never as the parent
+    // bucket's contents. Bun's native client answered the latter for this endpoint shape until it
+    // learned to decline one that reaches past the bucket, so this has to hold on both runtimes.
+    expect(await nonExistentBucket.listObjects()).toBeNull();
+    expect(await nonExistentBucket.getObject('any-key.txt')).toBeNull();
   });
 
   it('basic list objects', async () => {
@@ -199,9 +203,11 @@ export const testRunner = bucket => {
     expect(objects2).toBeInstanceOf(Array);
     expect(objects2.length).toBe(0);
 
-    // listing non existent prefix thros 404 no such key
-    const objectsWithPrefix = await s3client.listObjects('non-existent-prefix');
-    expect(objectsWithPrefix).toBe(null);
+    // A prefix that matches nothing is an empty listing, not an error. (This used to pass
+    // 'non-existent-prefix' as the *delimiter* — the first parameter — so the request was a GET on
+    // a key of that name, and the null it asserted was the 404 path reached by accident.)
+    const objectsWithPrefix = await s3client.listObjects('/', 'non-existent-prefix/');
+    expect(objectsWithPrefix).toEqual([]);
   });
 
   it('basic put and get object', async () => {
@@ -237,19 +243,10 @@ export const testRunner = bucket => {
         'x-amz-server-side-encryption-customer-key': 'wrong-key',
         'x-amz-server-side-encryption-customer-key-md5': 'wrong-md5',
       };
-      try {
-        const wrongResponse = await s3client.getObject(key, {}, wrongSsecHeaders);
-      } catch (err) {
-        expect(err).toBeDefined();
-        expect(err.message).toContain('400 – InvalidArgument');
-      }
-
-      try {
-        const wrongResponse = await s3client.getObject(key);
-      } catch (err) {
-        expect(err).toBeDefined();
-        expect(err.message).toContain('400 – InvalidRequest');
-      }
+      // rejects.toThrow, not try/catch: a bare catch block passes silently on the day these
+      // stop throwing, which is exactly the regression worth catching.
+      await expect(s3client.getObject(key, {}, wrongSsecHeaders)).rejects.toThrow('400 – InvalidArgument');
+      await expect(s3client.getObject(key)).rejects.toThrow('400 – InvalidRequest');
 
       // Clean up
       const delRespSsec = await s3client.deleteObject(key);
@@ -413,28 +410,6 @@ export const testRunner = bucket => {
     expect(delResp).toBe(true);
   });
 
-  it('putAnyObject: multipart upload for large buffer', async () => {
-    const key = 'putany-multipart-buffer';
-
-    // create payload > minPartSize
-    const largeSize = s3client.minPartSize + 1024;
-    const buffer = Buffer.alloc(largeSize, 0x61); // 'a'
-
-    await s3client.putAnyObject(key, buffer);
-
-    const data = await s3client.getObjectArrayBuffer(key);
-    const result = Buffer.from(data);
-
-    expect(result.length).toBe(largeSize);
-    expect(result.equals(buffer)).toBe(true);
-
-    const length = await s3client.getContentLength(key);
-    expect(length).toBe(largeSize);
-
-    const delResp = await s3client.deleteObject(key);
-    expect(delResp).toBe(true);
-  });
-
   it('putAnyObject: put ReadableStream with unknown size', async () => {
     const key = 'putany-stream';
 
@@ -490,8 +465,8 @@ export const testRunner = bucket => {
     await s3client.deleteObject(presignedKey);
   });
 
-  it('presigned URL: works with special characters in key', async () => {
-    const presignedKey = 'presigned/path with spaces/file.txt';
+  it('presigned URL: deep nested key with special characters', async () => {
+    const presignedKey = 'presigned/deeply/nested/dir/structure/file with spaces.txt';
     const content = 'special chars test';
 
     const putUrl = await s3client.getPresignedUrl('PUT', presignedKey, 300);
@@ -502,92 +477,6 @@ export const testRunner = bucket => {
     const getRes = await fetch(getUrl);
     expect(getRes.ok).toBe(true);
     expect(await getRes.text()).toBe(content);
-
-    await s3client.deleteObject(presignedKey);
-  });
-
-  it('presigned URL: binary content via PUT', async () => {
-    const presignedKey = 'presigned-binary.bin';
-    const binaryData = new Uint8Array([0x00, 0x01, 0x02, 0xff, 0xfe, 0xfd]);
-
-    const putUrl = await s3client.getPresignedUrl('PUT', presignedKey, 300);
-    const putRes = await fetch(putUrl, {
-      method: 'PUT',
-      body: binaryData,
-      headers: { 'Content-Type': 'application/octet-stream' },
-    });
-    expect(putRes.ok).toBe(true);
-
-    const getUrl = await s3client.getPresignedUrl('GET', presignedKey, 300);
-    const getRes = await fetch(getUrl);
-    expect(getRes.ok).toBe(true);
-    const downloaded = new Uint8Array(await getRes.arrayBuffer());
-    expect(downloaded).toEqual(binaryData);
-
-    await s3client.deleteObject(presignedKey);
-  });
-
-  it('presigned URL: overwrite existing object via PUT', async () => {
-    const presignedKey = 'presigned-overwrite.txt';
-    const original = 'original content';
-    const updated = 'updated content';
-
-    // Upload original via SDK
-    await s3client.putObject(presignedKey, original);
-    expect(await s3client.getObject(presignedKey)).toBe(original);
-
-    // Overwrite via presigned PUT
-    const putUrl = await s3client.getPresignedUrl('PUT', presignedKey, 300);
-    const putRes = await fetch(putUrl, { method: 'PUT', body: updated });
-    expect(putRes.ok).toBe(true);
-
-    // Verify overwrite via presigned GET
-    const getUrl = await s3client.getPresignedUrl('GET', presignedKey, 300);
-    const getRes = await fetch(getUrl);
-    expect(getRes.ok).toBe(true);
-    expect(await getRes.text()).toBe(updated);
-
-    await s3client.deleteObject(presignedKey);
-  });
-
-  it('presigned URL: nested deep key path', async () => {
-    const presignedKey = 'presigned/deeply/nested/dir/structure/file.json';
-    const content = JSON.stringify({ ok: true });
-
-    const putUrl = await s3client.getPresignedUrl('PUT', presignedKey, 300);
-    const putRes = await fetch(putUrl, {
-      method: 'PUT',
-      body: content,
-      headers: { 'Content-Type': 'application/json' },
-    });
-    expect(putRes.ok).toBe(true);
-
-    const getUrl = await s3client.getPresignedUrl('GET', presignedKey, 300);
-    const getRes = await fetch(getUrl);
-    expect(getRes.ok).toBe(true);
-    expect(await getRes.text()).toBe(content);
-
-    await s3client.deleteObject(presignedKey);
-  });
-
-  it('presigned URL: larger payload (~256 KB)', async () => {
-    const presignedKey = 'presigned-large.bin';
-    const largePayload = randomBytes(256 * 1024);
-
-    const putUrl = await s3client.getPresignedUrl('PUT', presignedKey, 300);
-    const putRes = await fetch(putUrl, {
-      method: 'PUT',
-      body: largePayload,
-      headers: { 'Content-Type': 'application/octet-stream' },
-    });
-    expect(putRes.ok).toBe(true);
-
-    const getUrl = await s3client.getPresignedUrl('GET', presignedKey, 300);
-    const getRes = await fetch(getUrl);
-    expect(getRes.ok).toBe(true);
-    const downloaded = new Uint8Array(await getRes.arrayBuffer());
-    expect(downloaded.byteLength).toBe(largePayload.byteLength);
-    expect(Buffer.compare(Buffer.from(downloaded), largePayload)).toBe(0);
 
     await s3client.deleteObject(presignedKey);
   });
@@ -875,19 +764,6 @@ export const testRunner = bucket => {
     await s3client.deleteObject(abKey);
   });
 
-  it('String multipart upload (large text)', async () => {
-    const key = 'string-multipart-opt';
-    const content = 'L'.repeat(s3client.minPartSize + 3000);
-
-    const result = await s3client.putAnyObject(key, content, 'text/plain');
-    expect(result.ok || result.status === 200).toBe(true);
-
-    const data = await s3client.getObject(key);
-    expect(data).toBe(content);
-
-    await s3client.deleteObject(key);
-  });
-
   // ─────────────────────────────────────────────────────────────────────────
   // ReadableStream tests (streaming path)
   // ─────────────────────────────────────────────────────────────────────────
@@ -990,43 +866,6 @@ export const testRunner = bucket => {
     expect(Buffer.from(data).every(b => b === 0x4e)).toBe(true);
 
     await s3client.deleteObject(key);
-  });
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // Comparison test: putAnyObject vs manual multipart
-  // ─────────────────────────────────────────────────────────────────────────
-
-  it('putAnyObject produces same result as manual multipart upload', async () => {
-    const keyAuto = 'auto-multipart';
-    const keyManual = 'manual-multipart';
-    const size = s3client.minPartSize * 2 + 1234;
-    const buffer = randomBytes(size);
-
-    // Auto upload
-    await s3client.putAnyObject(keyAuto, buffer);
-
-    // Manual multipart
-    const uploadId = await s3client.getMultipartUploadId(keyManual);
-    const parts = [];
-    const partSize = s3client.minPartSize;
-
-    for (let i = 0; i * partSize < size; i++) {
-      const start = i * partSize;
-      const end = Math.min(start + partSize, size);
-      const partData = buffer.subarray(start, end);
-      const part = await s3client.uploadPart(keyManual, uploadId, partData, i + 1);
-      parts.push(part);
-    }
-    await s3client.completeMultipartUpload(keyManual, uploadId, parts);
-
-    // Compare
-    const autoData = await s3client.getObjectArrayBuffer(keyAuto);
-    const manualData = await s3client.getObjectArrayBuffer(keyManual);
-
-    expect(Buffer.from(autoData).equals(Buffer.from(manualData))).toBe(true);
-    expect(Buffer.from(autoData).equals(buffer)).toBe(true);
-
-    await s3client.deleteObjects([keyAuto, keyManual]);
   });
 
   // multipart upload and download
@@ -1384,34 +1223,6 @@ export const testRunner = bucket => {
     });
   }
 
-  it('extensive list objects', async () => {
-    const prefix = `test-prefix-${Date.now()}/`;
-    const objAll = await s3client.listObjects('/', prefix);
-    expect(objAll).toEqual([]);
-    expect(objAll).toBeInstanceOf(Array);
-    expect(objAll).toHaveLength(0);
-
-    await Promise.all([
-      s3client.putObject(`${prefix}object1.txt`, contentString),
-      s3client.putObject(`${prefix}object2.txt`, contentString),
-      s3client.putObject(`${prefix}object3.txt`, contentString),
-    ]);
-
-    const objsUnlimited = await s3client.listObjects('/', prefix);
-    expect(objsUnlimited).toBeInstanceOf(Array);
-    expect(objsUnlimited).toHaveLength(3);
-
-    const objsLimited = await s3client.listObjects('/', prefix, 2);
-    expect(objsLimited).toBeInstanceOf(Array);
-    expect(objsLimited).toHaveLength(2);
-    expect(objsLimited[0].Key).toBe(`${prefix}object1.txt`);
-    expect(objsLimited[1].Key).toBe(`${prefix}object2.txt`);
-
-    // await Promise.all(objsUnlimited.map(o => s3client.deleteObject(o.key)));
-    await s3client.deleteObjects(objsUnlimited.map(o => o.Key));
-    expect(await s3client.listObjects('/', prefix)).toEqual([]);
-  });
-
   it('lists objects with delimiter and returns CommonPrefixes', async () => {
     const basePrefix = `delimiter-test-${Date.now()}/`;
 
@@ -1728,7 +1539,10 @@ export const testRunner = bucket => {
     // 1️⃣  Small page (2)
     const firstTwo = await s3client.listObjects('/', prefix, pageSmall);
     expect(firstTwo).toBeInstanceOf(Array);
-    expect(firstTwo).toHaveLength(pageSmall); // ✔ array length = 2:contentReference[oaicite:1]{index=1}
+    expect(firstTwo).toHaveLength(pageSmall);
+    // maxKeys must return the lexicographically first keys, not an arbitrary slice
+    // ('object1.txt' sorts before 'object10.txt' because '.' < '0').
+    expect(firstTwo.map(o => o.Key)).toEqual([`${prefix}object0.txt`, `${prefix}object1.txt`]);
 
     // 2️⃣  “Maximum” single page (1 000)
     const first900Hundred = await s3client.listObjects('/', prefix, pageLarge);

@@ -2,7 +2,7 @@
 
 import { createHash } from 'node:crypto';
 import { S3mini } from '../dist/index.mjs';
-import { beforeRun, resetBucketBeforeAll } from './_shared.test.js';
+import { beforeRun } from './_shared.test.js';
 
 import * as dotenv from 'dotenv';
 dotenv.config();
@@ -20,7 +20,8 @@ const minioSpecific = bucket => {
     region: bucket.region,
   });
 
-  resetBucketBeforeAll(s3client);
+  // No resetBucketBeforeAll here: testRunner already registered one on this same describe, so a
+  // second wipe just repeats it — with a client that has no retryFetch.
 
   it('put object with valid x-amz-checksum-sha1 header', async () => {
     const fileContents = Buffer.from('Some file contents.', 'utf-8');
