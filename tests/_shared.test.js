@@ -8,20 +8,40 @@ const MAX_RETRIES = 2;
 // 60s: Cloudflare R2's bulk DeleteObjects (up to 1000 keys/request) can exceed a tighter limit.
 const PER_REQUEST_TIMEOUT_MS = 60_000;
 
+// Statuses the S3 API defines as transient and expects the caller to retry. s3mini does not retry
+// on its own, and Backblaze answers InternalError often enough to redden a run by itself.
+const RETRYABLE_STATUS = new Set([500, 502, 503, 504]);
+// A stream body cannot be sent twice, so those requests are handed back as-is.
+const replayableBody = body =>
+  body == null || typeof body === 'string' || ArrayBuffer.isView(body) || body instanceof ArrayBuffer;
+
+// Captured before the global is replaced below, otherwise the wrapper would call itself.
+const baseFetch = globalThis.fetch.bind(globalThis);
+
 const retryFetch = async (input, init) => {
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
       const signal = init?.signal ?? AbortSignal.timeout(PER_REQUEST_TIMEOUT_MS);
-      return await fetch(input, { ...init, signal });
+      const res = await baseFetch(input, { ...init, signal });
+      if (!RETRYABLE_STATUS.has(res.status) || attempt === MAX_RETRIES || !replayableBody(init?.body)) return res;
+      console.warn(`retrying ${init?.method ?? 'GET'} ${new URL(input).pathname} after HTTP ${res.status}`);
+      await res.body?.cancel();
     } catch (err) {
       const code = err?.cause?.code ?? err?.code ?? '';
       const isTimeout = err?.name === 'TimeoutError' || err?.name === 'AbortError';
       const isTransient = isTimeout || TRANSIENT_CODES.some(c => code.includes(c));
       if (!isTransient || attempt === MAX_RETRIES) throw err;
-      await new Promise(r => setTimeout(r, 1000 * 2 ** attempt));
     }
+    await new Promise(r => setTimeout(r, 1000 * 2 ** attempt));
   }
 };
+
+// s3mini only takes Bun's native S3 path when the default fetch is in use, so handing retryFetch to
+// the client would keep the whole run on the signed path. Installing it as the default keeps the
+// native path engaged and still retries the operations that have no native fast path — multipart,
+// copy and put — which is where Backblaze's 500s land.
+const nativeBun = typeof globalThis.Bun?.S3Client === 'function';
+if (nativeBun) globalThis.fetch = retryFetch;
 
 function toUint8Array(data) {
   if (typeof data === 'string') {
@@ -116,7 +136,7 @@ export const testRunner = bucket => {
     secretAccessKey: bucket.secretAccessKey,
     endpoint: bucket.endpoint,
     region: bucket.region,
-    fetch: retryFetch,
+    ...(nativeBun ? {} : { fetch: retryFetch }),
   });
 
   resetBucketBeforeAll(s3client);

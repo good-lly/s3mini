@@ -3,22 +3,15 @@
 import type { DataInput, XmlValue, XmlMap, ListBucketResponse, ErrorWithCode, PartData } from './types.js';
 import { ERROR_PREFIX } from './consts.js';
 
-export const isBun = typeof navigator !== 'undefined' && navigator.userAgent === 'Bun';
-
-/** Strips the bucket name from a full endpoint URL, returning the base origin for Bun.S3Client. */
-export const extractBaseEndpoint = (endpoint: URL, bucket: string): string => {
-  // Path-style (/bucket/…): just use the origin
-  if (endpoint.pathname.split('/').some(Boolean)) {
-    return endpoint.origin;
-  }
-  // Virtual-hosted (bucket.host…): strip the bucket subdomain
-  const prefix = bucket + '.';
-  if (endpoint.hostname.startsWith(prefix)) {
-    const base = endpoint.hostname.slice(prefix.length);
-    return `${endpoint.protocol}//${base}${endpoint.port ? ':' + endpoint.port : ''}`;
-  }
-  return endpoint.origin;
-};
+/**
+ * True when running on a Bun version that exposes the native S3 client.
+ * `navigator.userAgent` is `Bun/<version>`, so the runtime is identified by `process.versions.bun`
+ * and the client is capability-checked: older Bun releases have no `Bun.S3Client`.
+ */
+export const isBun =
+  typeof process !== 'undefined' &&
+  !!process.versions?.bun &&
+  typeof (globalThis as { Bun?: { S3Client?: unknown } }).Bun?.S3Client === 'function';
 
 /**
  * Compare two strings by code point, as required for AWS SigV4 canonical

@@ -190,9 +190,10 @@ export interface NativeS3File {
 
 export interface NativeS3ListObject {
   key: string;
-  lastModified: Date;
+  lastModified: Date | string;
   size: number;
-  etag: string;
+  /** Bun spells it `eTag` and leaves the XML entities (`&#34;`) unresolved. */
+  eTag?: string;
   storageClass?: string;
 }
 

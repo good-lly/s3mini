@@ -1,11 +1,54 @@
 # Changelog
 
+## [1.0.0] - 2026-07-28
+
+### Added
+
+- `tests/bun-native.test.js` (`npm run test:bun-native`): checks that the native client is engaged
+  only when it should be, that its reads, listings and deletes match the signed path, and that the
+  list cursor advances or fails loudly.
+
+### Changed
+
+- ESM only package, no more minified CJS build.
+- Bun is detected with `process.versions.bun` plus a `Bun.S3Client` capability check. The previous
+  check compared `navigator.userAgent` to `'Bun'` while Bun reports `Bun/<version>`, so the fast
+  paths added in 0.9.4 never ran. They do now — see [BREAKING.md](BREAKING.md) for what that changes.
+- The native client is skipped when the caller supplies a custom `fetch` (its transport would be
+  bypassed) or when credentials are empty (anonymous access to public buckets).
+- Errors from native operations are re-thrown as `S3ServiceError`, with the HTTP status recovered
+  from the error code where the S3 API pins it, so both runtimes throw the same shape.
+- `putObject`, `putAnyObject`, `getObjectRaw` and `getObjectWithETag` have no Bun fast path. They
+  were listed in 0.9.4 but never active, and each was wrong or slower than one signed request: Bun's
+  `write()` rewrites `text/plain` to `text/plain;charset=utf-8`, stores a `ReadableStream` as the
+  string `[object ReadableStream]` and never switches to multipart, while the two read helpers cost
+  an extra round trip and `getObjectRaw` buffered the whole body instead of streaming it.
+- Dropped the `extractBaseEndpoint` utility added in 0.9.4. The Bun client is configured with the
+  endpoint origin plus `virtualHostedStyle` instead.
+- `retryFetch` in the E2E harness also retries HTTP 500/502/503/504 (replayable bodies only), which
+  the S3 API defines as transient. Backblaze returns `InternalError` often enough to fail a run.
+- Under Bun the harness installs `retryFetch` as `globalThis.fetch` rather than passing it in the
+  config, where it would have kept the whole run on the signed path and out of the native client.
+
+### Fixed
+
+- Bun `listObjects` paginated with `startAfter` derived from the last key, which stalled on a page
+  holding only `CommonPrefixes`. It now follows `continuationToken`, and throws instead of looping
+  forever when a truncated page repeats or omits the token.
+- Bun `listObjects` returned empty `ETag`s (Bun spells the field `eTag`) and forced a `/` delimiter,
+  grouping results the signed path returns flat.
+- Bun clients for virtual-hosted endpoints signed `bucket.host/bucket/key`.
+- Anonymous (credential-less) clients threw `ERR_S3_MISSING_CREDENTIALS` under Bun.
+
 ## [0.9.4] - 2026-04-08
 
 ### Added
 
 - Bun native S3 support via `Bun.S3Client` — automatic fast paths for `getObject`, `getObjectAsBytes`, `getObjectAsJson`, `getObjectWithETag`, `getObjectRaw` (incl. range requests via `slice()`), `putObject`, `putAnyObject`, `deleteObject`, `objectExists`, `getEtag`, `getContentLength`, `getPresignedUrl`, and `listObjects`. All operations transparently fall back to the standard HTTP path when Bun-specific conditions aren't met (e.g. SSE-C headers, extra opts).
 - `isBun` runtime detection and `extractBaseEndpoint` utility for Bun S3 client initialization.
+  - **Correction:** none of these Bun fast paths ever activated. `isBun` compared
+    `navigator.userAgent` to `'Bun'`, which Bun never reports. Fixed in 1.0.0, where `putObject`,
+    `putAnyObject`, `getObjectRaw` and `getObjectWithETag` were also dropped from the list.
 - Bun test runner (`tests/run-bun.js`) with Docker lifecycle management for provider tests.
 - CI workflow now runs E2E tests on both Node and Bun runtimes.
 - `retryFetch` wrapper in E2E test infrastructure for transient network error resilience (ETIMEDOUT, ECONNRESET).

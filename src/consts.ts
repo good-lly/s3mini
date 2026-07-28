@@ -13,6 +13,21 @@ export const IFHEADERS = new Set(['if-match', 'if-none-match', 'if-modified-sinc
 export const DEFAULT_REQUEST_SIZE_IN_BYTES = 8 * 1024 * 1024;
 export const MIN_PART_SIZE = 8 * 1024 * 1024;
 
+/** Error codes the S3 API pins to one HTTP status, used to restore the status Bun's S3Error drops. */
+export const S3_CODE_STATUS: Record<string, number> = {
+  NoSuchKey: 404,
+  NoSuchBucket: 404,
+  NoSuchUpload: 404,
+  NotFound: 404,
+  AccessDenied: 403,
+  InvalidAccessKeyId: 403,
+  SignatureDoesNotMatch: 403,
+  InvalidArgument: 400,
+  InvalidRequest: 400,
+  PreconditionFailed: 412,
+  SlowDown: 503,
+};
+
 // Headers
 export const HEADER_AMZ_CONTENT_SHA256 = 'x-amz-content-sha256';
 export const HEADER_AMZ_CHECKSUM_SHA256 = 'x-amz-checksum-sha256';
@@ -38,3 +53,4 @@ export const ERROR_DATA_BUFFER_REQUIRED = `${ERROR_PREFIX}data must be a Buffer 
 export const ERROR_PREFIX_TYPE = `${ERROR_PREFIX}prefix must be a string`;
 export const ERROR_MAX_KEYS_TYPE = `${ERROR_PREFIX}maxKeys must be a positive integer`;
 export const ERROR_DELIMITER_REQUIRED = `${ERROR_PREFIX}delimiter must be a string`;
+export const ERROR_BUN_PAGINATION_STALLED = `${ERROR_PREFIX}Bun S3 list pagination stalled: truncated page did not advance the continuation token`;

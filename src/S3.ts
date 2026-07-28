@@ -18,7 +18,6 @@ import {
   generateParts,
   toUint8Array,
   isBun,
-  extractBaseEndpoint,
   byCodePoint,
 } from './utils.js';
 import type * as IT from './types.js';
@@ -100,16 +99,23 @@ class S3mini {
     this._fetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => fetch(input, init);
     this.minPartSize = minPartSize;
 
-    if (isBun) {
+    // Bun's native client has its own transport, so a caller-supplied fetch would be silently
+    // bypassed: only take the native path when the default fetch is in use. It also refuses empty
+    // credentials, which anonymous access to public buckets relies on.
+    if (isBun && fetch === globalThis.fetch && this._hasCredentials()) {
       const { S3Client } = (
         globalThis as unknown as { Bun: { S3Client: new (o: Record<string, unknown>) => IT.NativeS3Client } }
       ).Bun;
+      // Bucket in the path means path-style; otherwise it is in the host and Bun has to be told,
+      // or it would repeat the bucket in the path (bucket.host/bucket/key).
+      const pathStyle = this.endpoint.pathname.split('/').some(Boolean);
       this._bun = new S3Client({
         accessKeyId,
         secretAccessKey,
-        endpoint: extractBaseEndpoint(this.endpoint, this.bucketName),
+        endpoint: this.endpoint.origin,
         region: this.region,
         bucket: this.bucketName,
+        virtualHostedStyle: !pathStyle,
       });
     }
   }
@@ -186,6 +192,22 @@ class S3mini {
     return this.#accessKeyId.trim().length > 0 && this.#secretAccessKey.trim().length > 0;
   }
 
+  /**
+   * Re-shape a Bun S3Error as the S3ServiceError the signed path throws, so callers see one error
+   * type on every runtime. Bun does not expose the HTTP status, so it is recovered from the error
+   * code where the S3 API pins it and left as 0 (unknown) otherwise.
+   */
+  private _bunError(e: unknown): unknown {
+    const err = e as { name?: string; code?: string; message?: string };
+    if (err?.name !== 'S3Error') {
+      return e;
+    }
+    const status = err.code ? (C.S3_CODE_STATUS[err.code] ?? 0) : 0;
+    const message = status ? `S3 returned ${status} – ${err.code}` : (err.message ?? String(e));
+    // The provider's wording goes where the signed path puts the error body.
+    return new S3ServiceError(message, status, err.code, err.message);
+  }
+
   /** Run a read op via Bun-native S3, returning null on NoSuchKey. */
   private async _bunRead<T>(key: string, op: (f: IT.NativeS3File) => Promise<T>): Promise<T | null> {
     try {
@@ -194,7 +216,7 @@ class S3mini {
       if ((e as { code?: string })?.code === 'NoSuchKey') {
         return null;
       }
-      throw e;
+      throw this._bunError(e);
     }
   }
 
@@ -726,27 +748,34 @@ class S3mini {
   ): Promise<IT.ListObject[] | null> {
     const unlimited = !(maxKeys && maxKeys > 0);
     let remaining = unlimited ? Infinity : maxKeys;
-    let startAfter: string | undefined;
+    let token: string | undefined;
     const all: IT.ListObject[] = [];
 
     try {
       do {
         const batchSize = Math.min(remaining === Infinity ? 1000 : remaining, 1000);
-        const res = await this._bunFetchPage(prefix, delimiter, batchSize, startAfter);
+        const res = await this._bunFetchPage(prefix, delimiter, batchSize, token);
         const mapped = this._bunMapListResult(res);
+        const prev = token;
+
+        token = res.nextContinuationToken;
         all.push(...mapped);
 
         if (!unlimited) {
           remaining -= mapped.length;
         }
 
-        startAfter = this._bunNextCursor(res);
-      } while (startAfter && remaining > 0);
+        // Only a page we still need to follow can stall: a missing or repeated token means the
+        // next request would either be skipped or replay this one forever.
+        if (res.isTruncated && remaining > 0 && (!token || token === prev)) {
+          throw new Error(C.ERROR_BUN_PAGINATION_STALLED);
+        }
+      } while (token && remaining > 0);
     } catch (e) {
       if ((e as { code?: string })?.code === 'NoSuchBucket') {
         return null;
       }
-      throw e;
+      throw this._bunError(e);
     }
 
     return all;
@@ -756,21 +785,15 @@ class S3mini {
     prefix: string,
     delimiter: string | undefined,
     maxKeys: number,
-    startAfter?: string,
+    continuationToken?: string,
   ): Promise<IT.NativeS3ListResult> {
     return this._bun!.list({
       prefix: prefix || undefined,
-      delimiter: delimiter || '/',
+      // No delimiter means a flat listing, matching the signed-request path.
+      delimiter,
       maxKeys,
-      ...(startAfter ? { startAfter } : {}),
+      ...(continuationToken ? { continuationToken } : {}),
     });
-  }
-
-  private _bunNextCursor(res: IT.NativeS3ListResult): string | undefined {
-    if (!res.isTruncated) {
-      return undefined;
-    }
-    return res.contents?.length ? res.contents.at(-1)!.key : undefined;
   }
 
   private _bunMapListResult(res: IT.NativeS3ListResult): IT.ListObject[] {
@@ -782,7 +805,7 @@ class S3mini {
           Key: item.key,
           Size: item.size,
           LastModified: item.lastModified instanceof Date ? item.lastModified : new Date(item.lastModified),
-          ETag: item.etag ?? '',
+          ETag: item.eTag ?? '',
           StorageClass: item.storageClass ?? '',
         });
       }
@@ -971,18 +994,6 @@ class S3mini {
     opts: Record<string, unknown> = {},
     ssecHeaders?: IT.SSECHeaders,
   ): Promise<{ etag: string | null; data: ArrayBuffer | null }> {
-    if (this._bun && !ssecHeaders && !Object.keys(opts).length) {
-      try {
-        const f = this._bun.file(key);
-        const [stat, data] = await Promise.all([f.stat(), f.arrayBuffer()]);
-        return { etag: sanitizeETag(stat.etag), data };
-      } catch (e) {
-        if ((e as { code?: string })?.code === 'NoSuchKey') {
-          return { etag: null, data: null };
-        }
-        throw e;
-      }
-    }
     try {
       const res = await this._signedRequest('GET', key, {
         query: opts,
@@ -1025,29 +1036,6 @@ class S3mini {
     opts: Record<string, unknown> = {},
     ssecHeaders?: IT.SSECHeaders,
   ): Promise<Response> {
-    if (this._bun && !ssecHeaders && !Object.keys(opts).length) {
-      const f = this._bun.file(key);
-      if (wholeFile) {
-        const buf = await f.arrayBuffer();
-        const stat = await f.stat();
-        return new Response(buf, {
-          status: 200,
-          headers: { 'content-length': String(stat.size), etag: stat.etag, 'content-type': stat.type },
-        });
-      }
-      const sliced = rangeTo === undefined ? f.slice(rangeFrom) : f.slice(rangeFrom, rangeTo);
-      const buf = await sliced.arrayBuffer();
-      const stat = await f.stat();
-      const endByte = rangeTo === undefined ? stat.size - 1 : rangeTo - 1;
-      return new Response(buf, {
-        status: 206,
-        headers: {
-          'content-range': `bytes ${rangeFrom}-${endByte}/${stat.size}`,
-          'content-length': String(buf.byteLength),
-        },
-      });
-    }
-
     let rangeHdr: Record<string, string | number> = {};
 
     if (!wholeFile) {
@@ -1065,13 +1053,17 @@ class S3mini {
    * Get the content length of an object.
    * This method sends a HEAD request to retrieve the content length of the specified object.
    * @param {string} key - The key of the object to retrieve the content length for.
-   * @returns A promise that resolves to the content length of the object in bytes, or 0 if not found.
-   * @throws {Error} If the content length header is not found in the response.
+   * @returns A promise that resolves to the content length of the object in bytes; 0 when the object exists but the response carries no content-length header.
+   * @throws {Error} If the object does not exist (HTTP 404) or the request otherwise fails; the underlying S3ServiceError is attached as `.cause`.
    */
   public async getContentLength(key: string, ssecHeaders?: IT.SSECHeaders): Promise<number> {
     try {
       if (this._bun && !ssecHeaders) {
-        return (await this._bun.file(key).stat()).size;
+        try {
+          return (await this._bun.file(key).stat()).size;
+        } catch (e) {
+          throw this._bunError(e);
+        }
       }
       const res = await this._signedRequest('HEAD', key, {
         headers: ssecHeaders ? { ...ssecHeaders } : undefined,
@@ -1095,7 +1087,11 @@ class S3mini {
    */
   public async objectExists(key: string, opts: Record<string, unknown> = {}): Promise<IT.ExistResponseCode> {
     if (this._bun && !Object.keys(opts).length) {
-      return this._bun.file(key).exists();
+      try {
+        return await this._bun.file(key).exists();
+      } catch (e) {
+        throw this._bunError(e);
+      }
     }
     const res = await this._signedRequest('HEAD', key, {
       query: opts,
@@ -1185,12 +1181,6 @@ class S3mini {
     additionalHeaders?: IT.AWSHeaders,
     contentLength?: number,
   ): Promise<Response> {
-    if (this._bun && !ssecHeaders && !additionalHeaders) {
-      const f = this._bun.file(key);
-      await f.write(data as string | ArrayBuffer | Uint8Array | Blob | ReadableStream, { type: fileType });
-      const { etag } = await f.stat();
-      return new Response(null, { status: 200, headers: etag ? { etag } : {} });
-    }
     const size = contentLength ?? getByteSize(data);
     return this._signedRequest('PUT', key, {
       body: data as BodyInit,
@@ -1231,15 +1221,6 @@ class S3mini {
     additionalHeaders?: IT.AWSHeaders,
     contentLength?: number,
   ): Promise<Response | { ok: boolean; status: number; headers: Map<string, string> }> {
-    // Bun handles multipart automatically for large files
-    if (this._bun && !ssecHeaders && !additionalHeaders) {
-      this._checkKey(key);
-      const f = this._bun.file(key);
-      await f.write(data as string | ArrayBuffer | Uint8Array | Blob | ReadableStream, { type: fileType });
-      const { etag } = await f.stat();
-      return this._createSuccessResponse(etag || '');
-    }
-
     const size = contentLength ?? getByteSize(data);
 
     // Single PUT for small files
@@ -1876,7 +1857,11 @@ class S3mini {
    */
   public async deleteObject(key: string): Promise<boolean> {
     if (this._bun) {
-      await this._bun.file(key).delete();
+      try {
+        await this._bun.file(key).delete();
+      } catch (e) {
+        throw this._bunError(e);
+      }
       return true;
     }
     const res = await this._signedRequest('DELETE', key, { tolerated: [200, 204] });

@@ -12,6 +12,32 @@ This is a comprehensive list of the breaking changes introduced in the major ver
 
 - ESM only package, no more minified CJS build
 
+- **The Bun native fast paths actually run now.** Runtime detection compared `navigator.userAgent` to
+  `'Bun'`, but Bun reports `Bun/<version>`, so the paths added in 0.9.4 never engaged and everything
+  went through signed `fetch`. On Bun, `getObject`, `getObjectArrayBuffer`, `getObjectJSON`,
+  `getEtag`, `getContentLength`, `objectExists`, `deleteObject`, `listObjects` and
+  `getPresignedUrl` are now served by `Bun.S3Client`. Node behaviour is unchanged. What differs on
+  Bun:
+  - Those requests no longer pass through `globalThis.fetch`, so fetch mocks and interceptors do not
+    see them, `requestAbortTimeout` does not apply to them, and they produce no per-request `logger`
+    output.
+  - Errors are still `S3ServiceError` with the same `.code`, but `.status` is `0` for codes the S3
+    API does not pin to a single status, and `.body` carries the provider's message text instead of
+    the raw XML error body.
+  - Presigned URLs are produced by Bun's signer. Valid SigV4, but the query parameters may differ.
+  - **Migration**: passing any `fetch` in the config keeps the previous path, since a caller-supplied
+    transport is never bypassed:
+
+```typescript
+const s3 = new S3mini({ ...config, fetch: (input, init) => fetch(input, init) });
+```
+
+- `putObject`, `putAnyObject`, `getObjectRaw` and `getObjectWithETag` no longer have Bun fast paths
+  (listed in 0.9.4, never active). Bun's `write()` rewrites `text/plain` to `text/plain;charset=utf-8`,
+  stores a `ReadableStream` as the literal string `[object ReadableStream]` and does not switch to
+  multipart, while the two read helpers cost an extra round trip and `getObjectRaw` buffered the whole
+  body instead of streaming it. All four use the signed path on every runtime.
+
 ## Version 0.8.1
 
 - `listObjects` and `listObjectsPaged` now include `CommonPrefixes` in results when using the `delimiter` option
