@@ -199,6 +199,23 @@ describe('object versioning', () => {
       expect(copySource).toContain('src.jpg');
       expect(copySource).toContain('versionId=ver%2F1%2B2');
     });
+
+    it('result carries the new object versionId from the response header', async () => {
+      const s3 = new S3mini({
+        ...baseConfig,
+        fetch: createMockFetch(
+          () =>
+            new Response(getFixture('copy-response.xml'), {
+              status: 200,
+              headers: { 'content-type': 'application/xml', 'x-amz-version-id': 'ver-new-1' },
+            }),
+        ),
+      });
+
+      const result = await s3.copyObject('src.jpg', 'dst.jpg', { versionId: 'ver/1+2' });
+      expect(result.etag).toBeTruthy();
+      expect(result.versionId).toBe('ver-new-1');
+    });
   });
 
   describe('deleteObject / deleteObjects versionId', () => {
@@ -257,6 +274,62 @@ describe('object versioning', () => {
       expect(capturedBody).toContain('<Key>other.txt</Key>');
       expect(capturedBody).not.toMatch(/other\.txt<\/Key><VersionId>/);
       expect(results).toEqual([true, true, true]);
+    });
+
+    it('returns deleteMarker info when versionInfo is true', async () => {
+      const s3 = new S3mini({
+        ...baseConfig,
+        fetch: createMockFetch((_url, method) => {
+          expect(method).toBe('DELETE');
+          // Real providers (AWS/MinIO) return the new marker's id in x-amz-version-id
+          // on a single-object delete, not in x-amz-delete-marker-version-id.
+          return new Response(null, {
+            status: 204,
+            headers: {
+              'x-amz-delete-marker': 'true',
+              'x-amz-version-id': 'dm-xyz',
+            },
+          });
+        }),
+      });
+
+      const info = await s3.deleteObject({ key: 'file.jpg' }, { versionInfo: true });
+      expect(info).toEqual({
+        key: 'file.jpg',
+        deleted: true,
+        deleteMarker: true,
+        deleteMarkerVersionId: 'dm-xyz',
+      });
+    });
+
+    it('returns the deleted versionId when a specific version is removed with versionInfo', async () => {
+      const s3 = new S3mini({
+        ...baseConfig,
+        fetch: createMockFetch(
+          () => new Response(null, { status: 204, headers: { 'x-amz-version-id': 'v-removed' } }),
+        ),
+      });
+
+      const info = await s3.deleteObject({ key: 'file.jpg', versionId: 'v-removed' }, { versionInfo: true });
+      expect(info).toEqual({ key: 'file.jpg', deleted: true, versionId: 'v-removed' });
+    });
+
+    it('maps per-target DeleteObjectResult[] from bulk delete markers', async () => {
+      const s3 = new S3mini({
+        ...baseConfig,
+        fetch: createMockFetch(() => xmlResponse(getFixture('delete-result-markers.xml'))),
+      });
+
+      const results = await s3.deleteObjects(
+        [{ key: 'file1.jpg' }, { key: 'file2.jpg', versionId: 'v-old-2' }, 'other.txt'],
+        { versionInfo: true },
+      );
+
+      expect(results).toEqual([
+        { key: 'file1.jpg', deleted: true, deleteMarker: true, deleteMarkerVersionId: 'dm-1' },
+        { key: 'file2.jpg', deleted: true, versionId: 'v-old-2' },
+        { key: 'other.txt', deleted: true },
+      ]);
     });
   });
 

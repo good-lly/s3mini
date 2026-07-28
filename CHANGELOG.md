@@ -10,7 +10,9 @@
   - New `listObjectVersions(key)` returns all versions for a specific object key (exact match), including which entry is latest.
   - `copyObject` accepts optional `versionId` on `CopyObjectOptions` (appended to `x-amz-copy-source`) for restore-by-copy.
   - `deleteObject` / `deleteObjects` accept `DeleteObject` (`{ key, versionId? }`) in addition to string keys; bulk delete XML includes `<VersionId>` when set.
-- Exported types: `ListObject`, `DeleteObject`, `CopyObjectOptions`, `CopyObjectResult`.
+  - `deleteObject` / `deleteObjects` accept `{ versionInfo: true }` to return a `DeleteObjectResult` / `DeleteObjectResult[]` carrying the deleted `versionId`, `deleteMarker`, and new `deleteMarkerVersionId` — read from the response headers/body so no follow-up list request is needed. Default boolean return is unchanged.
+  - `copyObject` result now includes the new object's `versionId` (from the `x-amz-version-id` response header) on versioned buckets.
+- Exported types: `ListObject`, `DeleteObject`, `DeleteObjectResult`, `CopyObjectOptions`, `CopyObjectResult`.
 - E2E: real versioning lifecycle test (enable bucket → multi-put → list/get/copy-restore → versioned delete) against live providers; MinIO global setup enables versioning.
 
 ## [1.0.0] - 2026-07-28

@@ -18,6 +18,7 @@ export type {
   ErrorWithCode,
   ListObject,
   DeleteObject,
+  DeleteObjectResult,
   CopyObjectOptions,
   CopyObjectResult,
 } from './types.js';

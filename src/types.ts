@@ -173,6 +173,23 @@ export interface CopyObjectOptions {
 export interface CopyObjectResult {
   etag: string;
   lastModified?: Date;
+  /** Version id of the newly created destination object (versioned buckets). */
+  versionId?: string;
+}
+
+/**
+ * Detailed delete outcome for a single target. Returned by `deleteObject` /
+ * `deleteObjects` when called with `{ versionInfo: true }`.
+ */
+export interface DeleteObjectResult {
+  key: string;
+  deleted: boolean;
+  /** Version id of the object version permanently deleted (when a `versionId` was targeted). */
+  versionId?: string;
+  /** True if S3 created a delete marker rather than permanently deleting. */
+  deleteMarker?: boolean;
+  /** Version id of the delete marker created (versioned bucket, no `versionId` targeted). */
+  deleteMarkerVersionId?: string;
 }
 
 type BinaryData = ArrayBuffer | Uint8Array;

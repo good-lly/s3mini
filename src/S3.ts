@@ -1855,7 +1855,9 @@ class S3mini {
         headers,
         tolerated: [200],
       });
-      return this._parseCopyObjectResponse(await res.text());
+      const versionId = res.headers.get(C.HEADER_AMZ_VERSION_ID) ?? undefined;
+      const result = this._parseCopyObjectResponse(await res.text());
+      return versionId ? { ...result, versionId } : result;
     } catch (err) {
       this._log('error', `Error in copy operation to ${destinationKey}`, {
         error: String(err),
@@ -1881,7 +1883,7 @@ class S3mini {
    * @param {IT.SSECHeaders} [options.destinationSSECHeaders={}] - Encryption headers for destination
    * @param {IT.AWSHeaders} [options.additionalHeaders={}] - Extra x-amz-* headers
    *
-   * @returns {Promise<IT.CopyObjectResult>} Copy result with etag and lastModified date
+   * @returns {Promise<IT.CopyObjectResult>} Copy result with etag, lastModified date, and `versionId` of the new object version (versioned buckets)
    * @throws {TypeError} If sourceKey or destinationKey is invalid
    * @throws {Error} If copy operation fails or S3 returns an error
    *
@@ -2045,17 +2047,35 @@ class S3mini {
    * Deletes an object from the bucket.
    * Accepts either a key string or a {@link IT.DeleteObject} with optional `versionId`
    * for permanently removing a specific version on a versioned bucket.
+   *
+   * By default resolves to a boolean. Pass `{ versionInfo: true }` to receive a
+   * {@link IT.DeleteObjectResult} carrying the deleted `versionId`, whether a delete
+   * marker was created (`deleteMarker`), and the new marker's `deleteMarkerVersionId`.
+   * Requesting version info forces the signed HTTP path (Bun's native delete can't
+   * surface those response headers).
    * @param {string | IT.DeleteObject} target - Object key or `{ key, versionId? }`.
-   * @returns A promise that resolves to true if the object was deleted successfully, false otherwise.
+   * @param {{ versionInfo?: boolean }} [options] - Pass `{ versionInfo: true }` for a detailed result.
+   * @returns Boolean, or {@link IT.DeleteObjectResult} when `versionInfo` is set.
    * @example
    * await s3.deleteObject('file.jpg');
    * await s3.deleteObject({ key: 'file.jpg', versionId: 'abc123' });
+   * const info = await s3.deleteObject('file.jpg', { versionInfo: true });
+   * if (info.deleteMarker) console.log(info.deleteMarkerVersionId);
    */
-  public async deleteObject(target: string | IT.DeleteObject): Promise<boolean> {
+  public async deleteObject(target: string | IT.DeleteObject): Promise<boolean>;
+  public async deleteObject(
+    target: string | IT.DeleteObject,
+    options: { versionInfo: true },
+  ): Promise<IT.DeleteObjectResult>;
+  public async deleteObject(
+    target: string | IT.DeleteObject,
+    options: { versionInfo?: boolean } = {},
+  ): Promise<boolean | IT.DeleteObjectResult> {
     const { key, versionId } = this._normalizeDeleteTarget(target);
+    const wantInfo = options.versionInfo === true;
 
-    // Bun-native delete has no versionId support — fall through to HTTP when versioned
-    if (this._bun && !versionId) {
+    // Bun-native delete can't surface version/delete-marker headers — use the signed path when info is requested.
+    if (this._bun && !versionId && !wantInfo) {
       try {
         await this._bun.file(key).delete();
       } catch (e) {
@@ -2068,7 +2088,27 @@ class S3mini {
       query: versionId ? { versionId } : {},
       tolerated: [200, 204],
     });
-    return res.status === 200 || res.status === 204;
+    const deleted = res.status === 200 || res.status === 204;
+    if (!wantInfo) {
+      return deleted;
+    }
+
+    const versionIdHeader = res.headers.get(C.HEADER_AMZ_VERSION_ID) ?? undefined;
+    if (res.headers.get(C.HEADER_AMZ_DELETE_MARKER) === 'true') {
+      // A delete marker was created; S3 returns its id in the x-amz-version-id header.
+      return {
+        key,
+        deleted,
+        deleteMarker: true,
+        ...(versionIdHeader ? { deleteMarkerVersionId: versionIdHeader } : {}),
+      };
+    }
+    const resolvedVersionId = versionIdHeader ?? versionId;
+    return {
+      key,
+      deleted,
+      ...(resolvedVersionId ? { versionId: resolvedVersionId } : {}),
+    };
   }
 
   private _normalizeDeleteTarget(target: string | IT.DeleteObject): IT.DeleteObject {
@@ -2096,12 +2136,51 @@ class S3mini {
 
   private async _deleteObjectsProcess(targets: IT.DeleteObject[]): Promise<boolean[]> {
     const out = await this._sendDeleteRequest(targets);
-    const ids = targets.map(t => this._deleteTargetId(t));
-    const resultMap = new Map<string, boolean>(ids.map(id => [id, false]));
-    this._markDeletedKeys(out, resultMap, targets);
-    this._logDeleteErrors(out, resultMap);
+    const matches = this._resolveDeleteMatches(out, targets);
+    const boolMap = new Map<string, boolean>();
+    for (const [id, m] of matches) {
+      boolMap.set(id, m.deleted);
+    }
+    this._logDeleteErrors(out, boolMap);
+    return targets.map(t => matches.get(this._deleteTargetId(t))?.deleted ?? false);
+  }
 
-    return ids.map(id => resultMap.get(id) || false);
+  private async _deleteObjectsProcessInfo(targets: IT.DeleteObject[]): Promise<IT.DeleteObjectResult[]> {
+    const out = await this._sendDeleteRequest(targets);
+    const matches = this._resolveDeleteMatches(out, targets);
+    const boolMap = new Map<string, boolean>();
+    for (const [id, m] of matches) {
+      boolMap.set(id, m.deleted);
+    }
+    this._logDeleteErrors(out, boolMap);
+    return targets.map(t => {
+      const id = this._deleteTargetId(t);
+      const entry = matches.get(id)?.entry;
+      const entryVersionId = entry ? ((entry.versionId || entry.VersionId) as string | undefined) : undefined;
+      const entryDeleteMarkerVersionId = entry
+        ? ((entry.deleteMarkerVersionId || entry.DeleteMarkerVersionId) as string | undefined)
+        : undefined;
+      const isDeleteMarker = entry
+        ? (entry.deleteMarker ?? entry.DeleteMarker) === true ||
+          (entry.deleteMarker ?? entry.DeleteMarker) === 'true'
+        : false;
+      const deleted = matches.get(id)?.deleted ?? false;
+      if (isDeleteMarker) {
+        // Bulk delete: AWS returns the marker id in <DeleteMarkerVersionId>.
+        const markerVersionId = entryDeleteMarkerVersionId ?? entryVersionId;
+        return {
+          key: t.key,
+          deleted,
+          deleteMarker: true,
+          ...(markerVersionId ? { deleteMarkerVersionId: markerVersionId } : {}),
+        };
+      }
+      return {
+        key: t.key,
+        deleted,
+        ...((entryVersionId || t.versionId) ? { versionId: entryVersionId ?? t.versionId } : {}),
+      };
+    });
   }
 
   private async _sendDeleteRequest(targets: IT.DeleteObject[]): Promise<Record<string, unknown>> {
@@ -2132,14 +2211,17 @@ class S3mini {
     return (parsed.DeleteResult || parsed.deleteResult || parsed) as Record<string, unknown>;
   }
 
-  private _markDeletedKeys(
+  private _resolveDeleteMatches(
     out: Record<string, unknown>,
-    resultMap: Map<string, boolean>,
     targets: IT.DeleteObject[],
-  ): void {
+  ): Map<string, { deleted: boolean; entry?: Record<string, unknown> }> {
+    const matches = new Map<string, { deleted: boolean; entry?: Record<string, unknown> }>(
+      targets.map(t => [this._deleteTargetId(t), { deleted: false }]),
+    );
+
     const deleted = out.deleted || out.Deleted;
     if (!deleted) {
-      return;
+      return matches;
     }
 
     const items = Array.isArray(deleted) ? deleted : [deleted];
@@ -2147,16 +2229,17 @@ class S3mini {
       if (!item || typeof item !== 'object') {
         continue;
       }
-      const obj = item as Record<string, unknown>;
-      const key = obj.key || obj.Key;
+      const entry = item as Record<string, unknown>;
+      const key = entry.key || entry.Key;
       if (!key || typeof key !== 'string') {
         continue;
       }
-      const versionId = (obj.versionId || obj.VersionId) as string | undefined;
+      const versionId = (entry.versionId || entry.VersionId) as string | undefined;
       const compositeId = versionId ? `${key}\0${versionId}` : key;
 
-      if (resultMap.has(compositeId)) {
-        resultMap.set(compositeId, true);
+      const direct = matches.get(compositeId);
+      if (direct && !direct.deleted) {
+        matches.set(compositeId, { deleted: true, entry });
         continue;
       }
 
@@ -2172,12 +2255,14 @@ class S3mini {
           continue;
         }
         const id = this._deleteTargetId(t);
-        if (resultMap.get(id) === false) {
-          resultMap.set(id, true);
+        const cur = matches.get(id);
+        if (cur && !cur.deleted) {
+          matches.set(id, { deleted: true, entry });
           break;
         }
       }
     }
+    return matches;
   }
 
   private _logDeleteErrors(out: Record<string, unknown>, resultMap: Map<string, boolean>): void {
@@ -2211,28 +2296,48 @@ class S3mini {
   /**
    * Deletes multiple objects from the bucket.
    * Each entry may be a key string or a {@link IT.DeleteObject} with optional `versionId`.
+   *
+   * By default resolves to an array of booleans (one per target, in order). Pass
+   * `{ versionInfo: true }` to receive an array of {@link IT.DeleteObjectResult} carrying
+   * the deleted `versionId`, whether a delete marker was created, and the new marker's
+   * `deleteMarkerVersionId` for each target.
    * @param {Array<string | IT.DeleteObject>} targets - Objects to delete.
-   * @returns A promise that resolves to an array of booleans indicating success for each target in order.
+   * @param {{ versionInfo?: boolean }} [options] - Pass `{ versionInfo: true }` for detailed per-target results.
+   * @returns Booleans, or {@link IT.DeleteObjectResult[]} when `versionInfo` is set.
    * @example
    * await s3.deleteObjects(['a.txt', { key: 'b.txt', versionId: 'v1' }]);
+   * const info = await s3.deleteObjects(['a.txt'], { versionInfo: true });
    */
-  public async deleteObjects(targets: Array<string | IT.DeleteObject>): Promise<boolean[]> {
+  public async deleteObjects(targets: Array<string | IT.DeleteObject>): Promise<boolean[]>;
+  public async deleteObjects(
+    targets: Array<string | IT.DeleteObject>,
+    options: { versionInfo: true },
+  ): Promise<IT.DeleteObjectResult[]>;
+  public async deleteObjects(
+    targets: Array<string | IT.DeleteObject>,
+    options: { versionInfo?: boolean } = {},
+  ): Promise<boolean[] | IT.DeleteObjectResult[]> {
     if (!Array.isArray(targets) || targets.length === 0) {
       return [];
     }
     const normalized = targets.map(t => this._normalizeDeleteTarget(t));
     const maxBatchSize = 1000; // S3 limit for delete batch size
+
     if (normalized.length > maxBatchSize) {
-      const allPromises = [];
+      const batches: IT.DeleteObject[][] = [];
       for (let i = 0; i < normalized.length; i += maxBatchSize) {
-        const batch = normalized.slice(i, i + maxBatchSize);
-        allPromises.push(this._deleteObjectsProcess(batch));
+        batches.push(normalized.slice(i, i + maxBatchSize));
       }
-      const results = await Promise.all(allPromises);
-      // Flatten the results array
+      if (options.versionInfo) {
+        const results = await Promise.all(batches.map(b => this._deleteObjectsProcessInfo(b)));
+        return results.flat();
+      }
+      const results = await Promise.all(batches.map(b => this._deleteObjectsProcess(b)));
       return results.flat();
     }
-    return await this._deleteObjectsProcess(normalized);
+    return options.versionInfo
+      ? this._deleteObjectsProcessInfo(normalized)
+      : this._deleteObjectsProcess(normalized);
   }
 
   private async _sendRequest(

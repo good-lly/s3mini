@@ -1596,6 +1596,7 @@ export const testRunner = bucket => {
       // restore older version by copy onto same key
       const copyResult = await s3client.copyObject(key, key, { versionId: id1 });
       expect(copyResult.etag).toBeDefined();
+      expect(isRealVersionId(copyResult.versionId)).toBe(true);
       expect(await s3client.getObject(key)).toBe(v1Body);
 
       const afterRestore = await s3client.listObjectVersions(key);
@@ -1607,12 +1608,22 @@ export const testRunner = bucket => {
         v => !v.IsLatest && !v.IsDeleteMarker && isRealVersionId(v.VersionId),
       );
       expect(toDelete).toBeDefined();
-      expect(await s3client.deleteObject({ key, versionId: toDelete.VersionId })).toBe(true);
+      const singleInfo = await s3client.deleteObject(
+        { key, versionId: toDelete.VersionId },
+        { versionInfo: true },
+      );
+      expect(singleInfo).toEqual({ key, deleted: true, versionId: toDelete.VersionId });
 
       const afterSingleDelete = await s3client.listObjectVersions(key);
       expect(
         afterSingleDelete.some(v => v.VersionId === toDelete.VersionId && !v.IsDeleteMarker),
       ).toBe(false);
+
+      // plain delete on a versioned bucket creates a delete marker; versionInfo surfaces it
+      const markerInfo = await s3client.deleteObject(key, { versionInfo: true });
+      expect(markerInfo.deleted).toBe(true);
+      expect(markerInfo.deleteMarker).toBe(true);
+      expect(isRealVersionId(markerInfo.deleteMarkerVersionId)).toBe(true);
 
       // bulk-delete every remaining version (+ delete markers) by VersionId
       const remaining = await s3client.listObjectVersions(key);
@@ -1620,9 +1631,9 @@ export const testRunner = bucket => {
         .filter(v => isRealVersionId(v.VersionId))
         .map(v => ({ key: v.Key, versionId: v.VersionId }));
       expect(versionedTargets.length).toBeGreaterThan(0);
-      const bulkResults = await s3client.deleteObjects(versionedTargets);
+      const bulkResults = await s3client.deleteObjects(versionedTargets, { versionInfo: true });
       expect(bulkResults).toHaveLength(versionedTargets.length);
-      expect(bulkResults.every(Boolean)).toBe(true);
+      expect(bulkResults.every(r => r.deleted)).toBe(true);
 
       const finalVersions = await s3client.listObjectVersions(key);
       const live = finalVersions.filter(v => !v.IsDeleteMarker);
