@@ -20,6 +20,7 @@ const baseFetch = globalThis.fetch.bind(globalThis);
 
 const retryFetch = async (input, init) => {
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const startedAt = Date.now();
     try {
       const signal = init?.signal ?? AbortSignal.timeout(PER_REQUEST_TIMEOUT_MS);
       const res = await baseFetch(input, { ...init, signal });
@@ -30,6 +31,13 @@ const retryFetch = async (input, init) => {
       const code = err?.cause?.code ?? err?.code ?? '';
       const isTimeout = err?.name === 'TimeoutError' || err?.name === 'AbortError';
       const isTransient = isTimeout || TRANSIENT_CODES.some(c => code.includes(c));
+      // A request that dies here surfaces at the top of whatever test was running, with nothing
+      // saying which request it was — name it while we still have the method, path and clock.
+      const url = new URL(input);
+      console.warn(
+        `[${providerName}] ${init?.method ?? 'GET'} ${url.pathname}${url.search} failed after ` +
+          `${Date.now() - startedAt}ms (attempt ${attempt + 1}/${MAX_RETRIES + 1}): ${err?.name ?? err} ${code}`,
+      );
       if (!isTransient || attempt === MAX_RETRIES) throw err;
     }
     await new Promise(r => setTimeout(r, 1000 * 2 ** attempt));
@@ -98,7 +106,6 @@ const large_buffer = randomBytes(EIGHT_MB * 3.2);
 
 const byteSize = str => new Blob([str]).size;
 
-const OP_CAP = 40;
 let providerName;
 const key = 'first-test-object.txt';
 const contentString = 'Hello, world!';
@@ -1488,54 +1495,42 @@ export const testRunner = bucket => {
     },
   );
 
+  // Sized to what a live bucket can prove: it truncates at maxKeys, orders lexicographically and
+  // honours a continuation token. The >1000-key paths — an unlimited listObjects() following the
+  // server's own 1000-key cap, and deleteObjects splitting into 1000-key batches — are unreachable
+  // below that cap and are covered offline in tests/list-pagination.test.js. Doing them here cost
+  // 1 114 uploads + 1 114 deletes per provider per run, which on a versioned bucket is ~2 228 index
+  // entries and pushed hetzner past this harness's per-request timeout.
   it('lists objects with pagination', async () => {
     /* ----- test data setup ----- */
     const prefix = `test-prefix-${Date.now()}/`; // isolate this run
-    const totalKeys = 1_114;
+    const totalKeys = 15;
     const pageSmall = 2;
-    const pageLarge = 900;
-    let counter = 0;
-    let attempts = 0;
-    let errors = [];
+    const pageLarge = 10;
 
     // Bucket must start empty for this prefix
     expect(await s3client.listObjects('/', prefix)).toEqual([]);
-    // Upload 1 114 objects in parallel
-    const generator = function* (n) {
-      for (let i = 0; i < n; i++)
-        yield async () => {
-          try {
-            const response = await s3client.putObject(`${prefix}object${i}.txt`, contentString);
-            attempts++;
-            if (response.status === 200) {
-              counter++;
-            } else {
-              throw new Error(`Unexpected status ${response.status}`);
-            }
-          } catch (err) {
-            errors.push({ index: i, error: err.message || err });
-            throw err; // Re-throw to let runInBatches handle it
-          }
-        };
-    };
-    const batchSize = providerName === 'backblaze' ? 20 : OP_CAP;
-    await runInBatches(generator(totalKeys), batchSize, 1_000);
 
-    // Retry any failed uploads (allSettled may silently drop some)
-    const uploaded = await s3client.listObjects('/', prefix);
-    const missingCount = totalKeys - uploaded.length;
+    const keys = Array.from({ length: totalKeys }, (_, i) => `${prefix}object${i}.txt`);
+    const uploads = await runInBatches(
+      keys.map(k => () => s3client.putObject(k, contentString)),
+      5,
+    );
+    // runInBatches settles rather than rejects, so a failed upload would otherwise only surface
+    // further down as a confusingly short listing.
+    expect(uploads.filter(r => r.status === 'rejected').map(r => String(r.reason))).toEqual([]);
 
-    if (missingCount > 0) {
-      const uploadedKeys = new Set(uploaded.map(o => o.Key));
-      for (let i = 0; i < totalKeys; i++) {
-        const key = `${prefix}object${i}.txt`;
-        if (!uploadedKeys.has(key)) {
-          await s3client.putObject(key, contentString);
-          counter++;
-        }
-      }
-    }
     /* ----- assertions ----- */
+    // Listing is eventually consistent on some providers, so let the count settle first.
+    let everything = [];
+    for (let i = 0; i < 3; i++) {
+      everything = await s3client.listObjects('/', prefix); // maxKeys = undefined ⇒ list all
+      if (everything.length === totalKeys) break;
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+    expect(everything).toBeInstanceOf(Array);
+    expect(everything).toHaveLength(totalKeys);
+
     // 1️⃣  Small page (2)
     const firstTwo = await s3client.listObjects('/', prefix, pageSmall);
     expect(firstTwo).toBeInstanceOf(Array);
@@ -1544,34 +1539,20 @@ export const testRunner = bucket => {
     // ('object1.txt' sorts before 'object10.txt' because '.' < '0').
     expect(firstTwo.map(o => o.Key)).toEqual([`${prefix}object0.txt`, `${prefix}object1.txt`]);
 
-    // 2️⃣  “Maximum” single page (1 000)
-    const first900Hundred = await s3client.listObjects('/', prefix, pageLarge);
-    expect(first900Hundred).toBeInstanceOf(Array);
-    expect(first900Hundred).toHaveLength(pageLarge); // ✔ array length = 900:contentReference[oaicite:2]{index=2}
-    expect(first900Hundred[0].Key).toBe(`${prefix}object0.txt`); // ✔ first object key
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    // 3️⃣  Unlimited (implicit pagination inside helper)
-    let everything = await s3client.listObjects('/', prefix); // maxKeys = undefined ⇒ list all
-    expect(everything).toBeInstanceOf(Array);
-    expect(everything).toHaveLength(counter);
-
-    // 1️⃣ 1000 page - empty next token (explicit pagination - to return first page)
-    let firstPage = await s3client.listObjectsPaged('/', prefix, 1_000, undefined); // nextContinuationToken = undefined ⇒ first page
+    // 2️⃣  Explicit pagination: a full page hands back a token …
+    const firstPage = await s3client.listObjectsPaged('/', prefix, pageLarge, undefined);
     expect(firstPage.objects).toBeInstanceOf(Array);
-    expect(firstPage.objects).toHaveLength(1_000);
+    expect(firstPage.objects).toHaveLength(pageLarge);
+    expect(firstPage.nextContinuationToken).toBeTruthy();
 
-    // 1️⃣ rest of the objects - with token (explicit pagination - continue from previous page)
-    let secondPage = await s3client.listObjectsPaged('/', prefix, 1_000, firstPage.nextContinuationToken); // nextContinuationToken = continue from previous page
+    // 3️⃣  … and that token resumes where the first page stopped, with no repeats and no gaps.
+    const secondPage = await s3client.listObjectsPaged('/', prefix, pageLarge, firstPage.nextContinuationToken);
     expect(secondPage.objects).toBeInstanceOf(Array);
-    expect(secondPage.objects).toHaveLength(totalKeys - 1_000);
+    expect(secondPage.objects).toHaveLength(totalKeys - pageLarge);
+    const pagedKeys = [...firstPage.objects, ...secondPage.objects].map(o => o.Key);
+    expect(pagedKeys.slice().sort()).toEqual(keys.slice().sort());
 
     // cleanup and test deleteObjects
-    for (let i = 0; i < 3; i++) {
-      everything = await s3client.listObjects('/', prefix);
-      if (everything.length === totalKeys) break;
-      await new Promise(resolve => setTimeout(resolve, 2000));
-    }
-    expect(everything.length).toBe(totalKeys);
     const massDelete = await s3client.deleteObjects(everything.map(o => o.Key));
 
     // Check if all deletions were successful
@@ -1583,8 +1564,8 @@ export const testRunner = bucket => {
     // Verify bucket now empty for this prefix
     expect(await s3client.listObjects('/', prefix)).toEqual([]);
 
-    // The 1 114 keys above are the suite's biggest source of leftover versions on a versioned
-    // bucket — reclaim them instead of leaving 2 index entries per key behind.
+    // Deleting by key on a versioned bucket only hides the versions — reclaim this prefix so the
+    // debris does not survive the run.
     await purgeVersions(s3client, prefix);
   });
 

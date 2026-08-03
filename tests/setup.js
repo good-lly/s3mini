@@ -274,7 +274,7 @@ async function minioEnableVersioning(cfg) {
  * accumulating for a while it is tens of thousands of deletes, which would blow jest's per-test
  * timeout. globalSetup is not on that clock.
  */
-async function purgeObjectVersions(cfg) {
+export async function purgeObjectVersions(cfg) {
   try {
     // Inside the try on purpose: the constructor validates, so a config that slipped past the
     // filter must degrade to a skipped purge rather than abort globalSetup and the whole run.

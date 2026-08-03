@@ -5,6 +5,7 @@ dotenv.config();
 
 import { join } from 'path';
 import { composeDown } from './docker.js';
+import { purgeObjectVersions } from './setup.js';
 
 const composeFiles = {
   minio: join(process.cwd(), 'tests', 'compose.minio.yaml'),
@@ -26,5 +27,14 @@ export default async () => {
 
     console.log(`⏬  stopping ${cfg.provider} …`);
     await composeDown(composeFile); // `docker compose -f … down`
+  }
+
+  // Reclaim the version debris this run left on the persistent MicroCeph bucket. globalSetup's
+  // purge reclaims what accumulated before the run; this mirrors it at run-end so superseded
+  // versions and delete markers do not survive into the next run. Like the setup purge it stays off
+  // jest's per-test clock — see purgeObjectVersions() in setup.js for the timeout rationale.
+  const ceph = bucketConfigs.find(cfg => cfg.provider === 'ceph');
+  if (ceph) {
+    await purgeObjectVersions(ceph);
   }
 };
