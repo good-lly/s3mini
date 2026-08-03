@@ -1,0 +1,19 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<ListVersionsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Name>bucket</Name>
+  <Prefix/>
+  <KeyMarker/>
+  <VersionIdMarker/>
+  <NextKeyMarker>file1.jpg</NextKeyMarker>
+  <NextVersionIdMarker>v-page1</NextVersionIdMarker>
+  <MaxKeys>1</MaxKeys>
+  <IsTruncated>true</IsTruncated>
+  <Version>
+    <Key>file1.jpg</Key>
+    <VersionId>v-page1</VersionId>
+    <IsLatest>true</IsLatest>
+    <LastModified>2026-06-16T22:14:34.000Z</LastModified>
+    <Size>100</Size>
+    <StorageClass>STANDARD</StorageClass>
+  </Version>
+</ListVersionsResult>

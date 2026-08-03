@@ -1,7 +1,7 @@
 'use strict';
 
 import { S3mini } from '../dist/index.mjs';
-import { beforeRun, resetBucketBeforeAll } from './_shared.test.js';
+import { beforeRun } from './_shared.test.js';
 
 import * as dotenv from 'dotenv';
 dotenv.config();
@@ -19,7 +19,8 @@ const cephSpecific = bucket => {
     region: bucket.region,
   });
 
-  resetBucketBeforeAll(s3client);
+  // No resetBucketBeforeAll here: testRunner already registered one on this same describe, so a
+  // second wipe just repeats it — with a client that has no retryFetch.
 
   it('put object with canned x-amz-acl', async () => {
     const fileContents = Buffer.from('Some private file contents.', 'utf-8');

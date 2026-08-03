@@ -1,0 +1,15 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Deleted>
+    <Key>file1.jpg</Key>
+    <DeleteMarker>true</DeleteMarker>
+    <DeleteMarkerVersionId>dm-1</DeleteMarkerVersionId>
+  </Deleted>
+  <Deleted>
+    <Key>file2.jpg</Key>
+    <VersionId>v-old-2</VersionId>
+  </Deleted>
+  <Deleted>
+    <Key>other.txt</Key>
+  </Deleted>
+</DeleteResult>

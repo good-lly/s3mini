@@ -5,6 +5,7 @@ dotenv.config();
 
 import { join } from 'node:path';
 import { composeUp, composeUpWait, execDockerCommand } from './docker.js';
+import { S3mini } from '../dist/index.mjs';
 
 import { promisify } from 'util';
 import { exec } from 'child_process';
@@ -206,12 +207,104 @@ async function garageInit(containerName = 'garage') {
   }
 }
 
-const bucketConfigs = Object.keys(process.env)
-  .filter(k => k.startsWith('BUCKET_ENV_'))
-  .map(k => {
-    const [provider, accessKeyId, secretAccessKey, endpoint, region] = process.env[k].split(',');
-    return { provider, accessKeyId, secretAccessKey, endpoint, region };
+/**
+ * Read every BUCKET_ENV_* into a config, dropping the ones that cannot produce a client.
+ *
+ * A variable that is set but blank or truncated — a CI secret that did not resolve — parses into a
+ * config with no credentials, and the S3mini constructor rejects those. Thrown from globalSetup
+ * that aborts the whole run before a single test executes, so skip them here instead; the warning
+ * keeps a silently absent provider from looking like a passing suite.
+ */
+const readBucketConfigs = () =>
+  Object.keys(process.env)
+    .filter(k => k.startsWith('BUCKET_ENV_'))
+    .map(k => {
+      const [provider, accessKeyId, secretAccessKey, endpoint, region] = process.env[k].split(',');
+      return { envKey: k, provider, accessKeyId, secretAccessKey, endpoint, region };
+    })
+    .filter(cfg => {
+      if (cfg.provider && cfg.accessKeyId && cfg.secretAccessKey && cfg.endpoint) return true;
+      console.warn(`⚠️  ${cfg.envKey} is set but incomplete — skipping (want provider,key,secret,endpoint,region)`);
+      return false;
+    });
+
+const bucketConfigs = readBucketConfigs();
+
+/**
+ * Ensure the MinIO bucket exists and has versioning enabled so E2E versioning
+ * tests exercise a real ListObjectVersions / versioned copy-delete path.
+ */
+async function minioEnableVersioning(cfg) {
+  const s3 = new S3mini({
+    accessKeyId: cfg.accessKeyId,
+    secretAccessKey: cfg.secretAccessKey,
+    endpoint: cfg.endpoint,
+    region: cfg.region || 'us-east-1',
   });
+
+  // Bucket may not exist yet on a fresh volume
+  try {
+    const exists = await s3.bucketExists();
+    if (!exists) {
+      await s3.createBucket();
+      console.log(`✅ MinIO bucket created for versioning tests`);
+    }
+  } catch (err) {
+    // createBucket can 409 if it already exists; continue
+    console.warn(`MinIO bucketExists/createBucket: ${err.message || err}`);
+  }
+
+  const ok = await s3.setBucketVersioning('Enabled');
+  if (!ok) {
+    throw new Error('Failed to enable MinIO bucket versioning');
+  }
+  const status = await s3.getBucketVersioning();
+  console.log(`✅ MinIO bucket versioning: ${status}`);
+}
+
+/**
+ * Reclaim non-current object versions and delete markers left on a versioned bucket.
+ *
+ * Every cleanup in the suite deletes by key, which on a versioned bucket only adds a delete marker
+ * — the old versions stay in the bucket index and listObjects() stops showing them, so the debris
+ * is invisible and grows by ~2 entries per key per CI run until the provider starts answering the
+ * parallel upload tests with 503 SlowDown.
+ *
+ * This runs in globalSetup rather than a beforeAll hook on purpose: on a bucket that has been
+ * accumulating for a while it is tens of thousands of deletes, which would blow jest's per-test
+ * timeout. globalSetup is not on that clock.
+ */
+export async function purgeObjectVersions(cfg) {
+  try {
+    // Inside the try on purpose: the constructor validates, so a config that slipped past the
+    // filter must degrade to a skipped purge rather than abort globalSetup and the whole run.
+    const s3 = new S3mini({
+      accessKeyId: cfg.accessKeyId,
+      secretAccessKey: cfg.secretAccessKey,
+      endpoint: cfg.endpoint,
+      region: cfg.region,
+    });
+
+    const listed = await s3.listObjects('/', '', undefined, { versions: true });
+    // Keep only what is live: the newest version of a key that is not a delete marker. Everything
+    // else is debris — superseded versions, plus delete markers (removing a latest marker together
+    // with the versions it hides retires the key completely). Without the IsLatest guard this
+    // deletes current objects too, i.e. wipes the bucket rather than reclaiming it.
+    const targets = (listed ?? [])
+      .filter(o => o.VersionId && o.VersionId !== 'null' && !(o.IsLatest && !o.IsDeleteMarker))
+      .map(o => ({ key: o.Key, versionId: o.VersionId }));
+    if (targets.length === 0) return;
+
+    await s3.deleteObjects(targets);
+    console.log(`🧹 ${cfg.provider}: purged ${targets.length} object versions / delete markers`);
+  } catch (err) {
+    // Housekeeping must never take the run down with it. Providers without ListObjectVersions
+    // answer 501 (R2) or have no versioning (garage), and a bulk versioned delete against a
+    // rate-limited remote bucket can drop the socket mid-flight. The suite's own per-test
+    // cleanup still runs either way — only the reclaim is lost.
+    console.warn(`🧹 ${cfg.provider}: version purge skipped — ${err.message || err}`);
+  }
+}
 
 export default async () => {
   for (const cfg of bucketConfigs) {
@@ -223,6 +316,7 @@ export default async () => {
         process.env.MINIO_ROOT_USER = cfg.accessKeyId;
         process.env.MINIO_ROOT_PASSWORD = cfg.secretAccessKey;
         await composeUpWait(composeFile);
+        await minioEnableVersioning(cfg);
         break;
       case 'garage':
         await composeUp(composeFile);
@@ -238,4 +332,7 @@ export default async () => {
     //   await cephInit();
     // }
   }
+
+  // Re-read the env: garageInit() publishes BUCKET_ENV_GARAGE only once its container is up.
+  await Promise.all(readBucketConfigs().map(purgeObjectVersions));
 };

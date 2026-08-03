@@ -39,6 +39,21 @@ export interface ListObject {
   LastModified: Date;
   ETag: string;
   StorageClass: string;
+  /** Present when listing with `{ versions: true }` or via `listObjectVersions`. */
+  VersionId?: string;
+  /** Present when listing versions; true if this is the current version of the key. */
+  IsLatest?: boolean;
+  /** True when the entry is a delete marker from ListObjectVersions. */
+  IsDeleteMarker?: boolean;
+}
+
+/**
+ * Object identity for delete APIs. Use instead of a bare key string when
+ * targeting a specific version on a versioned bucket.
+ */
+export interface DeleteObject {
+  key: string;
+  versionId?: string;
 }
 
 export interface CompleteMultipartUploadResult {
@@ -107,6 +122,12 @@ export interface XmlMap {
 
 export interface CopyObjectOptions {
   /**
+   * Source object version to copy. Appended as `?versionId=` on `x-amz-copy-source`.
+   * Useful for restoring an older version (copy version onto the same key).
+   */
+  versionId?: string;
+
+  /**
    * Specifies whether the metadata is copied from the source object or replaced with metadata provided in the request.
    * Valid values: 'COPY' | 'REPLACE'
    * Default: 'COPY'
@@ -152,6 +173,23 @@ export interface CopyObjectOptions {
 export interface CopyObjectResult {
   etag: string;
   lastModified?: Date;
+  /** Version id of the newly created destination object (versioned buckets). */
+  versionId?: string;
+}
+
+/**
+ * Detailed delete outcome for a single target. Returned by `deleteObject` /
+ * `deleteObjects` when called with `{ versionInfo: true }`.
+ */
+export interface DeleteObjectResult {
+  key: string;
+  deleted: boolean;
+  /** Version id of the object version permanently deleted (when a `versionId` was targeted). */
+  versionId?: string;
+  /** True if S3 created a delete marker rather than permanently deleting. */
+  deleteMarker?: boolean;
+  /** Version id of the delete marker created (versioned bucket, no `versionId` targeted). */
+  deleteMarkerVersionId?: string;
 }
 
 type BinaryData = ArrayBuffer | Uint8Array;

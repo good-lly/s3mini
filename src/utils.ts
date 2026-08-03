@@ -23,8 +23,12 @@ export const isBun =
  * @returns -1, 0, or 1
  */
 export const byCodePoint = (a: string, b: string): number => {
-  if (a < b) return -1;
-  if (a > b) return 1;
+  if (a < b) {
+    return -1;
+  }
+  if (a > b) {
+    return 1;
+  }
   return 0;
 };
 

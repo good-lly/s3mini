@@ -16,4 +16,9 @@ export type {
   ListBucketResponse,
   ListMultipartUploadResponse,
   ErrorWithCode,
+  ListObject,
+  DeleteObject,
+  DeleteObjectResult,
+  CopyObjectOptions,
+  CopyObjectResult,
 } from './types.js';
