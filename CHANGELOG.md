@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.0.0] - 2026-07-28
 
 ### Added
 
@@ -14,11 +14,6 @@
   - `copyObject` result now includes the new object's `versionId` (from the `x-amz-version-id` response header) on versioned buckets.
 - Exported types: `ListObject`, `DeleteObject`, `DeleteObjectResult`, `CopyObjectOptions`, `CopyObjectResult`.
 - E2E: real versioning lifecycle test (enable bucket → multi-put → list/get/copy-restore → versioned delete) against live providers; MinIO global setup enables versioning.
-
-## [1.0.0] - 2026-07-28
-
-### Added
-
 - `tests/bun-native.test.js` (`npm run test:bun-native`): checks that the native client is engaged
   only when it should be, that its reads, listings and deletes match the signed path, and that the
   list cursor advances or fails loudly.
