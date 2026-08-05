@@ -254,8 +254,8 @@ await s3.putAnyObject('video.mp4', buffer);
 // ✅ Zero-copy slicing — only reads data when uploading each part
 const file = Bun.file('large-video.mp4'); // Bun
 // or
-const blob = new Blob([await fs.readFile('large-video.mp4')]); // Node
-await s3.putAnyObject('video.mp4', file);
+const blob = await fs.openAsBlob('large-video.mp4'); // Node
+await s3.putAnyObject('video.mp4', blob);
 ```
 
 ### Manual Multipart Upload
