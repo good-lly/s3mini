@@ -178,6 +178,12 @@ class S3mini {
     }
   }
 
+  // S3 returns repeated elements as either an array or a single scalar object
+  // (e.g. a lone <Contents> is not wrapped in a 1-element array). Normalize to array.
+  private _asArray(value: unknown): unknown[] {
+    return Array.isArray(value) ? value : [value];
+  }
+
   private _validateConstructorParams(accessKeyId: string, secretAccessKey: string, endpoint: string): void {
     if (typeof accessKeyId !== 'string') {
       throw new TypeError(C.ERROR_ACCESS_KEY_REQUIRED);
@@ -863,55 +869,34 @@ class S3mini {
     return entry;
   }
 
+  private _pushListEntries(raw: unknown, isDeleteMarker: boolean, out: IT.ListObject[]): void {
+    if (!raw) {
+      return;
+    }
+    for (const item of this._asArray(raw)) {
+      out.push(this._mapListEntry(item as Record<string, unknown>, isDeleteMarker));
+    }
+  }
+
+  private _pushCommonPrefixes(raw: unknown, out: IT.ListObject[]): void {
+    if (!raw) {
+      return;
+    }
+    for (const item of this._asArray(raw)) {
+      const entry = item as Record<string, unknown>;
+      const prefix = entry.Prefix || entry.prefix;
+      if (typeof prefix === 'string') {
+        out.push({ Key: prefix, Size: 0, LastModified: new Date(0), ETag: '', StorageClass: '' });
+      }
+    }
+  }
+
   private _extractObjectsFromResponse(response: Record<string, unknown>): IT.ListObject[] {
-    const contents = response.Contents || response.contents; // S3 v2 vs v1
-    const versions = response.Version || response.version;
-    const deleteMarkers = response.DeleteMarker || response.deleteMarker;
-    const commonPrefixes = response.CommonPrefixes || response.commonPrefixes;
-
     const objects: IT.ListObject[] = [];
-
-    // Extract regular objects from Contents (ListObjects / ListObjectsV2)
-    if (contents) {
-      const raw = Array.isArray(contents) ? contents : [contents];
-      for (const item of raw) {
-        objects.push(this._mapListEntry(item as Record<string, unknown>));
-      }
-    }
-
-    // Extract versions from ListObjectVersions
-    if (versions) {
-      const raw = Array.isArray(versions) ? versions : [versions];
-      for (const item of raw) {
-        objects.push(this._mapListEntry(item as Record<string, unknown>, false));
-      }
-    }
-
-    // Extract delete markers from ListObjectVersions
-    if (deleteMarkers) {
-      const raw = Array.isArray(deleteMarkers) ? deleteMarkers : [deleteMarkers];
-      for (const item of raw) {
-        objects.push(this._mapListEntry(item as Record<string, unknown>, true));
-      }
-    }
-
-    // Extract directory prefixes from CommonPrefixes
-    if (commonPrefixes) {
-      const prefixList = Array.isArray(commonPrefixes) ? commonPrefixes : [commonPrefixes];
-      for (const item of prefixList) {
-        const prefix = (item as Record<string, unknown>).Prefix || (item as Record<string, unknown>).prefix;
-        if (typeof prefix === 'string') {
-          objects.push({
-            Key: prefix,
-            Size: 0,
-            LastModified: new Date(0),
-            ETag: '',
-            StorageClass: '',
-          });
-        }
-      }
-    }
-
+    this._pushListEntries(response.Contents || response.contents, false, objects);
+    this._pushListEntries(response.Version || response.version, false, objects);
+    this._pushListEntries(response.DeleteMarker || response.deleteMarker, true, objects);
+    this._pushCommonPrefixes(response.CommonPrefixes || response.commonPrefixes, objects);
     return objects;
   }
 
@@ -2228,6 +2213,42 @@ class S3mini {
     return (parsed.DeleteResult || parsed.deleteResult || parsed) as Record<string, unknown>;
   }
 
+  private _deleteVersionMatches(t: IT.DeleteObject, key: string, versionId?: string): boolean {
+    if (t.key !== key) {
+      return false;
+    }
+    if (versionId && t.versionId && t.versionId !== versionId) {
+      return false;
+    }
+    // Response without a version cannot satisfy a request that asked for one.
+    if (!versionId && t.versionId) {
+      return false;
+    }
+    return true;
+  }
+
+  // Mutates `matches`: marks the first not-yet-deleted target matching key/versionId.
+  // Uses `return` (not `break`) on a hit — nothing follows the loop, so don't "fix" it back.
+  private _markFirstPendingDeleted(
+    targets: IT.DeleteObject[],
+    key: string,
+    versionId: string | undefined,
+    matches: Map<string, { deleted: boolean; entry?: Record<string, unknown> }>,
+    entry: Record<string, unknown>,
+  ): void {
+    for (const t of targets) {
+      if (!this._deleteVersionMatches(t, key, versionId)) {
+        continue;
+      }
+      const id = this._deleteTargetId(t);
+      const cur = matches.get(id);
+      if (cur && !cur.deleted) {
+        matches.set(id, { deleted: true, entry });
+        return;
+      }
+    }
+  }
+
   private _resolveDeleteMatches(
     out: Record<string, unknown>,
     targets: IT.DeleteObject[],
@@ -2241,8 +2262,7 @@ class S3mini {
       return matches;
     }
 
-    const items = Array.isArray(deleted) ? deleted : [deleted];
-    for (const item of items) {
+    for (const item of this._asArray(deleted)) {
       if (!item || typeof item !== 'object') {
         continue;
       }
@@ -2252,32 +2272,14 @@ class S3mini {
         continue;
       }
       const versionId = (entry.versionId || entry.VersionId) as string | undefined;
-      const compositeId = versionId ? `${key}\0${versionId}` : key;
+      const id = this._deleteTargetId({ key, versionId });
 
-      const direct = matches.get(compositeId);
+      const direct = matches.get(id);
       if (direct && !direct.deleted) {
-        matches.set(compositeId, { deleted: true, entry });
+        matches.set(id, { deleted: true, entry });
         continue;
       }
-
-      // Match first pending request for this key (+ version when response has one)
-      for (const t of targets) {
-        if (t.key !== key) {
-          continue;
-        }
-        if (versionId && t.versionId && t.versionId !== versionId) {
-          continue;
-        }
-        if (!versionId && t.versionId) {
-          continue;
-        }
-        const id = this._deleteTargetId(t);
-        const cur = matches.get(id);
-        if (cur && !cur.deleted) {
-          matches.set(id, { deleted: true, entry });
-          break;
-        }
-      }
+      this._markFirstPendingDeleted(targets, key, versionId, matches, entry);
     }
     return matches;
   }
@@ -2287,26 +2289,29 @@ class S3mini {
     if (!errors) {
       return;
     }
-
-    const items = Array.isArray(errors) ? errors : [errors];
-    for (const item of items) {
-      if (item && typeof item === 'object') {
-        const obj = item as Record<string, unknown>;
-        const key = obj.key || obj.Key;
-        const versionId = (obj.versionId || obj.VersionId) as string | undefined;
-        if (key && typeof key === 'string') {
-          const id = versionId ? `${key}\0${versionId}` : key;
-          if (resultMap.has(id)) {
-            resultMap.set(id, false);
-          } else if (resultMap.has(key)) {
-            resultMap.set(key, false);
-          }
-          this._log('warn', `Failed to delete object: ${key}${versionId ? ` version ${versionId}` : ''}`, {
-            code: obj.code || obj.Code || 'Unknown',
-            message: obj.message || obj.Message || 'Unknown error',
-          });
-        }
+    for (const item of this._asArray(errors)) {
+      if (!item || typeof item !== 'object') {
+        continue;
       }
+      const obj = item as Record<string, unknown>;
+      const key = obj.key || obj.Key;
+      if (!key || typeof key !== 'string') {
+        continue;
+      }
+      const versionId = (obj.versionId || obj.VersionId) as string | undefined;
+      const id = this._deleteTargetId({ key, versionId });
+      if (resultMap.has(id)) {
+        resultMap.set(id, false);
+      } else if (resultMap.has(key)) {
+        resultMap.set(key, false);
+      }
+      const message = versionId
+        ? `Failed to delete object: ${key} version ${versionId}`
+        : `Failed to delete object: ${key}`;
+      this._log('warn', message, {
+        code: obj.code || obj.Code || 'Unknown',
+        message: obj.message || obj.Message || 'Unknown error',
+      });
     }
   }
 

@@ -1,0 +1,23 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Deleted>
+    <Key>gone.txt</Key>
+  </Deleted>
+  <Error>
+    <Key>missing.txt</Key>
+    <Code>NoSuchKey</Code>
+    <Message>The specified key does not exist.</Message>
+  </Error>
+  <Error>
+    <Key>locked.dat</Key>
+    <VersionId>v-locked</VersionId>
+    <Code>AccessDenied</Code>
+    <Message>Access Denied.</Message>
+  </Error>
+  <Error>
+    <Key>edge.txt</Key>
+    <VersionId></VersionId>
+    <Code>InternalError</Code>
+    <Message>boom</Message>
+  </Error>
+</DeleteResult>

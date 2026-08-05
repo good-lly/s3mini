@@ -331,6 +331,39 @@ describe('object versioning', () => {
         { key: 'other.txt', deleted: true },
       ]);
     });
+
+    it('logs warnings for <Error> entries and leaves errored targets not-deleted', async () => {
+      const warnCalls = [];
+      const logger = {
+        info: () => {},
+        warn: msg => warnCalls.push(msg),
+        error: () => {},
+      };
+      const s3 = new S3mini({
+        ...baseConfig,
+        logger,
+        fetch: createMockFetch(() => xmlResponse(getFixture('delete-result-with-error.xml'))),
+      });
+
+      const results = await s3.deleteObjects([
+        { key: 'gone.txt' },
+        { key: 'missing.txt' },
+        { key: 'locked.dat', versionId: 'v-locked' },
+        { key: 'edge.txt' },
+      ]);
+
+      // gone.txt has a <Deleted> entry; the three <Error> targets have none → not-deleted.
+      expect(results).toEqual([true, false, false, false]);
+
+      expect(warnCalls).toHaveLength(3);
+      const entries = warnCalls.map(JSON.parse);
+      const byKey = key => entries.find(e => e.message.includes(`: ${key}`));
+      expect(byKey('missing.txt').details).toMatchObject({ code: 'NoSuchKey' });
+      expect(byKey('locked.dat').message).toContain('version v-locked');
+      expect(byKey('locked.dat').details).toMatchObject({ code: 'AccessDenied' });
+      // Empty <VersionId></VersionId> reduces to a plain-key match (id === key).
+      expect(byKey('edge.txt').details).toMatchObject({ code: 'InternalError' });
+    });
   });
 
   describe('non-versions list still works', () => {

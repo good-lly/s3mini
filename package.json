@@ -61,7 +61,7 @@
   "devDependencies": {
     "@aws-lite/client": "0.23.7",
     "@aws-lite/s3": "0.2.7",
-    "@aws-sdk/client-s3": "3.1095.0",
+    "@aws-sdk/client-s3": "3.1103.0",
     "@babel/core": "7.29.7",
     "@babel/preset-typescript": "7.29.7",
     "@eslint/js": "10.0.1",
@@ -76,7 +76,7 @@
     "tinybench": "6.1.2",
     "tsdown": "0.22.14",
     "typescript": "6.0.3",
-    "typescript-eslint": "8.65.0"
+    "typescript-eslint": "8.66.0"
   },
   "prettier": {
     "bracketSpacing": true,
