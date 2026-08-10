@@ -2,14 +2,14 @@
   "name": "s3mini",
   "version": "1.0.0",
   "description": "👶 Tiny & fast S3 client for node and edge computing platforms",
-  "homepage": "https://codeberg.org/thinking_tools/s3mini",
+  "homepage": "https://code.nolog.cz/thinking.tools/s3mini",
   "bugs": {
-    "url": "https://codeberg.org/thinking_tools/s3mini/issues"
+    "url": "https://code.nolog.cz/thinking.tools/s3mini/issues"
   },
   "author": "good-lly",
   "repository": {
     "type": "git",
-    "url": "git+https://codeberg.org/thinking_tools/s3mini.git"
+    "url": "git+https://code.nolog.cz/thinking.tools/s3mini.git"
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"

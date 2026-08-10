@@ -6,8 +6,8 @@
 ![Bun](https://img.shields.io/badge/Bun-%23000000.svg?style=for-the-badge&logo=bun&logoColor=white)
 ![Cloudflare](https://img.shields.io/badge/Cloudflare-F38020?style=for-the-badge&logo=Cloudflare&logoColor=white)
 
-[[codeberg](https://codeberg.org/thinking_tools/s3mini)]
-[[issues](https://codeberg.org/thinking_tools/s3mini/issues)]
+[[code.nolog](https://code.nolog.cz/thinking.tools/s3mini)]
+[[issues](https://code.nolog.cz/thinking.tools/s3mini/issues)]
 [[npm](https://www.npmjs.com/package/s3mini)]
 
 ## Features
@@ -29,23 +29,23 @@ Contributions welcome!
 
 Dev:
 
-[![Last commit](https://img.shields.io/gitea/last-commit/thinking_tools/s3mini/dev?gitea_url=https%3A%2F%2Fcodeberg.org&color=green)](https://codeberg.org/thinking_tools/s3mini/commits/branch/dev)
-[![Issues](https://img.shields.io/gitea/issues/open/thinking_tools/s3mini?gitea_url=https%3A%2F%2Fcodeberg.org)](https://codeberg.org/thinking_tools/s3mini/issues)
+[![Last commit](https://img.shields.io/gitea/last-commit/thinking.tools/s3mini/dev?gitea_url=https%3A%2F%2Fcode.nolog.cz&color=green)](https://code.nolog.cz/thinking.tools/s3mini/commits/branch/dev)
+[![Issues](https://img.shields.io/gitea/issues/open/thinking.tools/s3mini?gitea_url=https%3A%2F%2Fcode.nolog.cz)](https://code.nolog.cz/thinking.tools/s3mini/issues)
 [![Bugs](https://sonarcloud.io/api/project_badges/measure?project=thinking-tools-at-codeberg_s3mini&metric=bugs&branch=dev)](https://sonarcloud.io/summary/new_code?id=thinking-tools-at-codeberg_s3mini&branch=dev)
 [![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=thinking-tools-at-codeberg_s3mini&metric=reliability_rating&branch=dev)](https://sonarcloud.io/summary/new_code?id=thinking-tools-at-codeberg_s3mini&branch=dev)
 [![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=thinking-tools-at-codeberg_s3mini&metric=security_rating&branch=dev)](https://sonarcloud.io/summary/new_code?id=thinking-tools-at-codeberg_s3mini&branch=dev)
 [![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=thinking-tools-at-codeberg_s3mini&metric=vulnerabilities&branch=dev)](https://sonarcloud.io/summary/new_code?id=thinking-tools-at-codeberg_s3mini&branch=dev)
 [![Technical Debt](https://sonarcloud.io/api/project_badges/measure?project=thinking-tools-at-codeberg_s3mini&metric=sqale_index&branch=dev)](https://sonarcloud.io/summary/new_code?id=thinking-tools-at-codeberg_s3mini&branch=dev)
 [![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=thinking-tools-at-codeberg_s3mini&metric=sqale_rating&branch=dev)](https://sonarcloud.io/summary/new_code?id=thinking-tools-at-codeberg_s3mini&branch=dev)
-[![Test:e2e(all)](https://codeberg.org/thinking_tools/s3mini/actions/workflows/test-e2e.yml/badge.svg?branch=dev)](https://codeberg.org/thinking_tools/s3mini/actions?workflow=test-e2e.yml)
+[![Test:e2e(all)](https://code.nolog.cz/thinking.tools/s3mini/actions/workflows/test-e2e.yml/badge.svg?branch=dev)](https://code.nolog.cz/thinking.tools/s3mini/actions?workflow=test-e2e.yml)
 
-[![Codeberg Repo stars](https://img.shields.io/gitea/stars/thinking_tools/s3mini?gitea_url=https%3A%2F%2Fcodeberg.org&style=social&label=Codeberg)](https://codeberg.org/thinking_tools/s3mini/stars) **+** [![GitHub Repo stars](https://img.shields.io/github/stars/good-lly/s3mini?style=social&label=GitHub)](https://github.com/good-lly/s3mini/stargazers)
+[![code.nolog Repo stars](https://img.shields.io/gitea/stars/thinking.tools/s3mini?gitea_url=https%3A%2F%2Fcode.nolog.cz&style=social&label=code.nolog)](https://code.nolog.cz/thinking.tools/s3mini/stars) **+** [![GitHub Repo stars](https://img.shields.io/github/stars/good-lly/s3mini?style=social&label=GitHub)](https://github.com/good-lly/s3mini/stargazers)
 [![NPM Downloads](https://img.shields.io/npm/dm/s3mini)](https://www.npmjs.com/package/s3mini)
 ![NPM Version](https://img.shields.io/npm/v/s3mini?color=green)
 ![npm package minimized gzipped size](https://img.shields.io/bundlejs/size/s3mini?color=green)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://codeberg.org/thinking_tools/s3mini/src/branch/dev/LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://code.nolog.cz/thinking.tools/s3mini/src/branch/dev/LICENSE)
 
-<a href="https://codeberg.org/thinking_tools/s3mini/issues/"> <img src="https://img.shields.io/badge/contributions-welcome-brightgreen.svg" alt="Contributions welcome" /></a>
+<a href="https://code.nolog.cz/thinking.tools/s3mini/issues/"> <img src="https://img.shields.io/badge/contributions-welcome-brightgreen.svg" alt="Contributions welcome" /></a>
 
 ### Bun vs Node
 
@@ -740,7 +740,7 @@ export default {
 
 Contributions are greatly appreciated! If you have an idea for a new feature or have found a bug, we encourage you to get involved in this order:
 
-1. _Open/Report Issues or Ideas_: If you encounter a problem, have an idea or a feature request, please open an issue on GitHub (FIRST!) . Be concise but include as much detail as necessary (environment, error messages, logs, steps to reproduce, etc.) so we can understand and address the issue and have a dialog.
+1. _Open/Report Issues or Ideas_: If you encounter a problem, have an idea or a feature request, please open an issue on [code.nolog.cz](https://code.nolog.cz/thinking.tools/s3mini/issues) (FIRST!) . Be concise but include as much detail as necessary (environment, error messages, logs, steps to reproduce, etc.) so we can understand and address the issue and have a dialog.
 
 2. _Create Pull Requests_: We welcome PRs! If you want to implement a new feature or fix a bug, feel free to submit a pull request to the latest `dev branch`. For major changes, it's a necessary to discuss your plans in an issue first!
 

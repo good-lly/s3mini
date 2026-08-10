@@ -1,11 +1,11 @@
-# Migrating to Codeberg
+# Migrating to code.nolog.cz
 
-This repository has moved to [Codeberg](https://codeberg.org/thinking_tools/s3mini).
+This repository has moved to [code.nolog.cz](https://code.nolog.cz/thinking.tools/s3mini).
 
-GitHub will no longer receive updates. Please update your remotes:
+GitHub and Codeberg will no longer receive updates. Please update your remotes:
 
-`git remote set-url origin https://codeberg.org/thinking_tools/s3mini.git`
+`git remote set-url origin https://code.nolog.cz/thinking.tools/s3mini.git`
 or 
-`git remote set-url origin ssh://git@codeberg.org/thinking_tools/s3mini.git`
+`git remote set-url origin ssh://git@code.nolog.cz:223/thinking.tools/s3mini.git`
 
-Issues and PRs should be opened on Codeberg going forward.
+Issues and PRs should be opened on code.nolog.cz going forward.

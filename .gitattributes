@@ -1,4 +1,4 @@
-# Language stats (GitHub Linguist / Codeberg go-enry):
+# Language stats (GitHub Linguist / Forgejo go-enry):
 # only the library source under src/ should count toward the language bar.
 tests/**     linguist-vendored
 examples/**  linguist-vendored

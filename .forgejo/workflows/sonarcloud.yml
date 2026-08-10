@@ -27,8 +27,8 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
           args: >
-            -Dsonar.projectKey=thinking-tools-at-codeberg_s3mini
-            -Dsonar.organization=thinking-tools-at-codeberg
+            -Dsonar.projectKey=thinking-tools-at-code-nolog-s3mini
+            -Dsonar.organization=thinking-tools-at-code-nolog
             -Dsonar.scm.provider=git
             -Dsonar.sources=src
             -Dsonar.coverage.exclusions="**/*"
