@@ -1,5 +1,5 @@
 {
-    "sonarCloudOrganization": "thinking-tools-at-codeberg",
-    "projectKey": "thinking-tools-at-codeberg_s3mini",
+    "sonarCloudOrganization": "thinking-tools-at-code-nolog",
+    "projectKey": "thinking-tools-at-code-nolog-s3mini",
     "region": "EU"
 }

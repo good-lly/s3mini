@@ -31,12 +31,12 @@ Dev:
 
 [![Last commit](https://img.shields.io/gitea/last-commit/thinking.tools/s3mini/dev?gitea_url=https%3A%2F%2Fcode.nolog.cz&color=green)](https://code.nolog.cz/thinking.tools/s3mini/commits/branch/dev)
 [![Issues](https://img.shields.io/gitea/issues/open/thinking.tools/s3mini?gitea_url=https%3A%2F%2Fcode.nolog.cz)](https://code.nolog.cz/thinking.tools/s3mini/issues)
-[![Bugs](https://sonarcloud.io/api/project_badges/measure?project=thinking-tools-at-codeberg_s3mini&metric=bugs&branch=dev)](https://sonarcloud.io/summary/new_code?id=thinking-tools-at-codeberg_s3mini&branch=dev)
-[![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=thinking-tools-at-codeberg_s3mini&metric=reliability_rating&branch=dev)](https://sonarcloud.io/summary/new_code?id=thinking-tools-at-codeberg_s3mini&branch=dev)
-[![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=thinking-tools-at-codeberg_s3mini&metric=security_rating&branch=dev)](https://sonarcloud.io/summary/new_code?id=thinking-tools-at-codeberg_s3mini&branch=dev)
-[![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=thinking-tools-at-codeberg_s3mini&metric=vulnerabilities&branch=dev)](https://sonarcloud.io/summary/new_code?id=thinking-tools-at-codeberg_s3mini&branch=dev)
-[![Technical Debt](https://sonarcloud.io/api/project_badges/measure?project=thinking-tools-at-codeberg_s3mini&metric=sqale_index&branch=dev)](https://sonarcloud.io/summary/new_code?id=thinking-tools-at-codeberg_s3mini&branch=dev)
-[![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=thinking-tools-at-codeberg_s3mini&metric=sqale_rating&branch=dev)](https://sonarcloud.io/summary/new_code?id=thinking-tools-at-codeberg_s3mini&branch=dev)
+[![Bugs](https://sonarcloud.io/api/project_badges/measure?project=thinking-tools-at-code-nolog-s3mini&metric=bugs&branch=dev)](https://sonarcloud.io/summary/new_code?id=thinking-tools-at-code-nolog-s3mini&branch=dev)
+[![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=thinking-tools-at-code-nolog-s3mini&metric=reliability_rating&branch=dev)](https://sonarcloud.io/summary/new_code?id=thinking-tools-at-code-nolog-s3mini&branch=dev)
+[![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=thinking-tools-at-code-nolog-s3mini&metric=security_rating&branch=dev)](https://sonarcloud.io/summary/new_code?id=thinking-tools-at-code-nolog-s3mini&branch=dev)
+[![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=thinking-tools-at-code-nolog-s3mini&metric=vulnerabilities&branch=dev)](https://sonarcloud.io/summary/new_code?id=thinking-tools-at-code-nolog-s3mini&branch=dev)
+[![Technical Debt](https://sonarcloud.io/api/project_badges/measure?project=thinking-tools-at-code-nolog-s3mini&metric=sqale_index&branch=dev)](https://sonarcloud.io/summary/new_code?id=thinking-tools-at-code-nolog-s3mini&branch=dev)
+[![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=thinking-tools-at-code-nolog-s3mini&metric=sqale_rating&branch=dev)](https://sonarcloud.io/summary/new_code?id=thinking-tools-at-code-nolog-s3mini&branch=dev)
 [![Test:e2e(all)](https://code.nolog.cz/thinking.tools/s3mini/actions/workflows/test-e2e.yml/badge.svg?branch=dev)](https://code.nolog.cz/thinking.tools/s3mini/actions?workflow=test-e2e.yml)
 
 [![code.nolog Repo stars](https://img.shields.io/gitea/stars/thinking.tools/s3mini?gitea_url=https%3A%2F%2Fcode.nolog.cz&style=social&label=code.nolog)](https://code.nolog.cz/thinking.tools/s3mini/stars) **+** [![GitHub Repo stars](https://img.shields.io/github/stars/good-lly/s3mini?style=social&label=GitHub)](https://github.com/good-lly/s3mini/stargazers)
