@@ -21,4 +21,8 @@ export type {
   DeleteObjectResult,
   CopyObjectOptions,
   CopyObjectResult,
+  SSECHeaders,
+  AWSHeaders,
+  DataInput,
+  HttpMethod,
 } from './types.js';
