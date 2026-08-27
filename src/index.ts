@@ -4,7 +4,7 @@
 export { S3mini } from './S3.js';
 export { S3mini as default } from './S3.js';
 
-export { sanitizeETag, runInBatches } from './utils.js';
+export { sanitizeETag, runInBatches, S3Error, S3ServiceError, S3NetworkError } from './utils.js';
 
 // Re-export types
 export type {
@@ -21,4 +21,8 @@ export type {
   DeleteObjectResult,
   CopyObjectOptions,
   CopyObjectResult,
+  SSECHeaders,
+  AWSHeaders,
+  DataInput,
+  HttpMethod,
 } from './types.js';
