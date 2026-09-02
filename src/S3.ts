@@ -1194,6 +1194,7 @@ class S3mini {
 
       const etag = res.headers.get(C.HEADER_ETAG);
       if (!etag) {
+        void res.body?.cancel();
         throw new Error(`${C.ERROR_PREFIX}ETag not found in response headers`);
       }
       return { etag: sanitizeETag(etag), data: await res.arrayBuffer() };

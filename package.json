@@ -1,6 +1,6 @@
 {
   "name": "s3mini",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "👶 Tiny & fast S3 client for node and edge computing platforms",
   "homepage": "https://code.nolog.cz/thinking.tools/s3mini",
   "bugs": {
@@ -33,6 +33,7 @@
     "test:bun-native": "bun tests/run-bun.js tests/bun-native.test.js",
     "test:e2e:bun": "npm run test:public:bun && npm run test:providers:bun",
     "test:perf": "node ./tests/perf/performance.test.js",
+    "test:memory": "node --expose-gc ./tests/perf/memory.test.js",
     "lint": "eslint src --ext .ts",
     "format": "prettier -w src",
     "formatcheck": "prettier --list-different src",
@@ -61,22 +62,22 @@
   "devDependencies": {
     "@aws-lite/client": "0.23.7",
     "@aws-lite/s3": "0.2.7",
-    "@aws-sdk/client-s3": "3.1103.0",
+    "@aws-sdk/client-s3": "3.1124.0",
     "@babel/core": "7.29.7",
     "@babel/preset-typescript": "7.29.7",
     "@eslint/js": "10.0.1",
     "console-table-printer": "2.16.1",
     "dotenv": "17.4.2",
-    "eslint": "10.8.0",
+    "eslint": "10.9.1",
     "eslint-config-prettier": "10.1.8",
-    "jest": "30.4.2",
+    "jest": "30.5.1",
     "minio": "8.0.7",
     "prettier": "3.9.6",
-    "s3mini": "0.9.5",
-    "tinybench": "6.1.2",
+    "s3mini": "1.0.0",
+    "tinybench": "6.1.4",
     "tsdown": "0.22.14",
     "typescript": "6.0.3",
-    "typescript-eslint": "8.66.0"
+    "typescript-eslint": "8.69.0"
   },
   "prettier": {
     "bracketSpacing": true,
