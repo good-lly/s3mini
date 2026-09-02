@@ -5,7 +5,8 @@ import * as dotenv from 'dotenv';
 dotenv.config();
 
 const name = 'minio';
-const raw = process.env[`BUCKET_ENV_${name.toUpperCase()}`]?.split(',') ?? null;
+const bucketName = `BUCKET_ENV_${name.toUpperCase()}`;
+const raw = process.env[bucketName] ? process.env[bucketName].split(',') : null;
 
 if (!raw) {
   describe.skip('custom-fetch', () => {
