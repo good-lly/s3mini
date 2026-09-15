@@ -1,6 +1,6 @@
 {
   "name": "s3mini",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "👶 Tiny & fast S3 client for node and edge computing platforms",
   "homepage": "https://code.nolog.cz/thinking.tools/s3mini",
   "bugs": {
@@ -41,6 +41,9 @@
     "build": "npm run typecheck && tsdown",
     "dev": "tsdown --watch"
   },
+  "main": "./dist/index.mjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
   "exports": {
     ".": "./dist/index.mjs",
     "./package.json": "./package.json"
@@ -117,6 +120,8 @@
     ],
     "dts": true,
     "clean": true,
-    "exports": true
+    "exports": {
+      "legacy": true
+    }
   }
 }
