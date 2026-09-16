@@ -34,6 +34,7 @@ Dev:
 [![Bugs](https://sonarcloud.io/api/project_badges/measure?project=thinking-tools-at-code-nolog-s3mini&metric=bugs&branch=dev)](https://sonarcloud.io/summary/new_code?id=thinking-tools-at-code-nolog-s3mini&branch=dev)
 [![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=thinking-tools-at-code-nolog-s3mini&metric=reliability_rating&branch=dev)](https://sonarcloud.io/summary/new_code?id=thinking-tools-at-code-nolog-s3mini&branch=dev)
 [![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=thinking-tools-at-code-nolog-s3mini&metric=security_rating&branch=dev)](https://sonarcloud.io/summary/new_code?id=thinking-tools-at-code-nolog-s3mini&branch=dev)
+[![Socket Badge](https://badge.socket.dev/npm/package/s3mini/1.0.2)](https://badge.socket.dev/npm/package/s3mini/1.0.2)
 [![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=thinking-tools-at-code-nolog-s3mini&metric=vulnerabilities&branch=dev)](https://sonarcloud.io/summary/new_code?id=thinking-tools-at-code-nolog-s3mini&branch=dev)
 [![Technical Debt](https://sonarcloud.io/api/project_badges/measure?project=thinking-tools-at-code-nolog-s3mini&metric=sqale_index&branch=dev)](https://sonarcloud.io/summary/new_code?id=thinking-tools-at-code-nolog-s3mini&branch=dev)
 [![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=thinking-tools-at-code-nolog-s3mini&metric=sqale_rating&branch=dev)](https://sonarcloud.io/summary/new_code?id=thinking-tools-at-code-nolog-s3mini&branch=dev)
