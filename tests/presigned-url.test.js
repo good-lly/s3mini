@@ -16,6 +16,8 @@ const hmacBytes = async (key, str) => {
   return new Uint8Array(await globalThis.crypto.subtle.sign('HMAC', k, enc.encode(str)));
 };
 const byCodePoint = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+// SigV4 encodes everything outside A-Z a-z 0-9 - _ . ~ ; encodeURIComponent leaves ! ' ( ) * bare.
+const sigv4Escape = s => encodeURIComponent(s).replace(/[!'()*]/g, c => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
 
 /**
  * Independent AWS SigV4 reimplementation. Recomputes the signature a strict
@@ -33,7 +35,7 @@ const presignedSignatureMatches = async (method, urlStr, { secretAccessKey, regi
 
   const canonicalQuery = [...sp.entries()]
     .filter(([k]) => k !== 'X-Amz-Signature')
-    .map(([k, v]) => [encodeURIComponent(k), encodeURIComponent(v)])
+    .map(([k, v]) => [sigv4Escape(k), sigv4Escape(v)])
     .sort(([a], [b]) => byCodePoint(a, b))
     .map(([k, v]) => `${k}=${v}`)
     .join('&');
@@ -373,6 +375,21 @@ describe('getPresignedUrl', () => {
         secretAccessKey: 'test-secret-key',
         region: 'us-east-1',
         extraHeaders,
+      });
+      expect(ok).toBe(true);
+    });
+  });
+
+  describe('SigV4 canonical query encoding (regression)', () => {
+    // A strict server re-encodes ! ' ( ) * in query values before signing; if the library leaves
+    // them bare (encodeURIComponent) the canonical requests differ and S3 answers 403.
+    it('signature validates for an RFC 5987 response-content-disposition holding ! \' ( ) *', async () => {
+      const url = await s3.getPresignedUrl('GET', 'some/key.pdf', 3600, {
+        'response-content-disposition': `inline; filename*=UTF-8''R%C3%A9sum%C3%A9 (1)!.pdf`,
+      });
+      const ok = await presignedSignatureMatches('GET', url, {
+        secretAccessKey: 'test-secret-key',
+        region: 'us-east-1',
       });
       expect(ok).toBe(true);
     });

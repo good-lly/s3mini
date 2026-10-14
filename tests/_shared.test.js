@@ -536,6 +536,24 @@ export const testRunner = bucket => {
     expect(putRes.status).toBe(403);
   });
 
+  it('presigned URL: GET with response-content-disposition holding SigV4-reserved characters', async () => {
+    const presignedKey = 'presigned-disposition.pdf';
+    // RFC 6266 / 5987 form for a non-ASCII download name; it always contains * and '
+    const disposition = `inline; filename*=UTF-8''R%C3%A9sum%C3%A9.pdf`;
+    await s3client.putObject(presignedKey, 'pdf', 'application/pdf');
+
+    const getUrl = await s3client.getPresignedUrl('GET', presignedKey, 300, {
+      'response-content-disposition': disposition,
+    });
+    // 403 SignatureDoesNotMatch if * and ' are left unencoded in the canonical query string
+    const getRes = await fetch(getUrl);
+    expect(getRes.status).toBe(200);
+    expect(getRes.headers.get('content-disposition')).toBe(disposition);
+    expect(await getRes.text()).toBe('pdf');
+
+    await s3client.deleteObject(presignedKey);
+  });
+
   // list multipart uploads and abort them
   it('list multipart uploads and abort them all', async () => {
     let multipartUpload;
@@ -1331,6 +1349,22 @@ export const testRunner = bucket => {
     expect(objects).toHaveLength(2);
 
     await s3client.deleteObjects(objects.map(o => o.Key));
+  });
+
+  it('keys with UTF-8, SigV4-reserved, URL and XML special characters: put, get, list and presigned GET', async () => {
+    // Real file names: every access path must find the object under the exact name it was stored as.
+    // ! ' ( ) * need SigV4 escaping, # and ? are URL delimiters, a literal &amp; must be XML-decoded once.
+    const utf8Key = `utf8-key-${Date.now()}/Rés (1)'s *final*! #1? &amp; – Ü 日本.txt`;
+
+    await s3client.putObject(utf8Key, contentString);
+    expect(await s3client.getObject(utf8Key)).toBe(contentString);
+    expect((await s3client.listObjects('/', utf8Key)).map(o => o.Key)).toEqual([utf8Key]);
+
+    const getRes = await fetch(await s3client.getPresignedUrl('GET', utf8Key, 300));
+    expect(getRes.status).toBe(200);
+    expect(await getRes.text()).toBe(contentString);
+
+    await s3client.deleteObject(utf8Key);
   });
 
   // Providers that do not implement S3 object versioning APIs:

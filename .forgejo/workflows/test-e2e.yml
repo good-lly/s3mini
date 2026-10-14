@@ -53,8 +53,8 @@ jobs:
 
       - name: Install Bun
         env:
-          BUN_VERSION: 1.3.13
-          BUN_SHA256: 79c0771fa8b92c33aae41e15a0e0d307ea99d0e2f00317c71c6c53237a78e25a
+          BUN_VERSION: 1.4.3
+          BUN_SHA256: 3e730528d89775f03f87f05c06787c4df4099d0a37f3f252e7b829cb23816e18
         run: |
           set -euo pipefail
           curl -fsSL "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-linux-x64.zip" -o /tmp/bun.zip

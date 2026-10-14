@@ -607,13 +607,6 @@ class S3mini {
     this._checkPrefix(prefix);
     this._checkOpts(opts);
 
-    if (this._bun && delimiter === '/' && !this._isVersionsMode(opts)) {
-      const extraKeys = Object.keys(opts).filter(k => k !== 'delimiter');
-      if (extraKeys.length === 0) {
-        return this._bunListAll(prefix, maxKeys, opts.delimiter as string | undefined);
-      }
-    }
-
     const keyPath = delimiter === '/' ? delimiter : uriEscape(delimiter);
     const unlimited = !(maxKeys && maxKeys > 0);
     let remaining = unlimited ? Infinity : maxKeys;
@@ -835,9 +828,7 @@ class S3mini {
       raw.listBucketResult ||
       raw) as Record<string, unknown>;
     const objects = this._extractObjectsFromResponse(out);
-    const continuationToken = versionsMode
-      ? this._extractVersionListToken(out)
-      : this._extractContinuationToken(out);
+    const continuationToken = versionsMode ? this._extractVersionListToken(out) : this._extractContinuationToken(out);
 
     return { objects, continuationToken };
   }
@@ -923,93 +914,6 @@ class S3mini {
     const versionIdMarker = (response.NextVersionIdMarker ?? response.nextVersionIdMarker ?? '') as string;
     // Always encode when truncated so the next request can resume correctly
     return this._encodeVersionListToken(String(keyMarker), String(versionIdMarker));
-  }
-
-  private async _bunListAll(
-    prefix: string,
-    maxKeys: number | undefined,
-    delimiter: string | undefined,
-  ): Promise<IT.ListObject[] | null> {
-    const unlimited = !(maxKeys && maxKeys > 0);
-    let remaining = unlimited ? Infinity : maxKeys;
-    let token: string | undefined;
-    const all: IT.ListObject[] = [];
-
-    try {
-      do {
-        const batchSize = Math.min(remaining === Infinity ? 1000 : remaining, 1000);
-        const res = await this._bunFetchPage(prefix, delimiter, batchSize, token);
-        const mapped = this._bunMapListResult(res);
-        const prev = token;
-
-        token = res.nextContinuationToken;
-        all.push(...mapped);
-
-        if (!unlimited) {
-          remaining -= mapped.length;
-        }
-
-        // Only a page we still need to follow can stall: a missing or repeated token means the
-        // next request would either be skipped or replay this one forever.
-        if (res.isTruncated && remaining > 0 && (!token || token === prev)) {
-          throw new Error(C.ERROR_BUN_PAGINATION_STALLED);
-        }
-      } while (token && remaining > 0);
-    } catch (e) {
-      // _fetchObjectBatch tolerates 404 whatever the provider calls it, so a bucket addressed
-      // through a path the provider reads as a key (NoSuchKey) must land on null here too.
-      if (this._isBunNotFound(e)) {
-        return null;
-      }
-      throw this._bunError(e);
-    }
-
-    return all;
-  }
-
-  private _bunFetchPage(
-    prefix: string,
-    delimiter: string | undefined,
-    maxKeys: number,
-    continuationToken?: string,
-  ): Promise<IT.NativeS3ListResult> {
-    return this._bun!.list({
-      prefix: prefix || undefined,
-      // No delimiter means a flat listing, matching the signed-request path.
-      delimiter,
-      maxKeys,
-      ...(continuationToken ? { continuationToken } : {}),
-    });
-  }
-
-  private _bunMapListResult(res: IT.NativeS3ListResult): IT.ListObject[] {
-    const objects: IT.ListObject[] = [];
-
-    if (res.contents) {
-      for (const item of res.contents) {
-        objects.push({
-          Key: item.key,
-          Size: item.size,
-          LastModified: item.lastModified instanceof Date ? item.lastModified : new Date(item.lastModified),
-          ETag: item.eTag ?? '',
-          StorageClass: item.storageClass ?? '',
-        });
-      }
-    }
-
-    if (res.commonPrefixes) {
-      for (const item of res.commonPrefixes) {
-        objects.push({
-          Key: item.prefix,
-          Size: 0,
-          LastModified: new Date(0),
-          ETag: '',
-          StorageClass: '',
-        });
-      }
-    }
-
-    return objects;
   }
 
   /**
@@ -2164,8 +2068,7 @@ class S3mini {
         ? ((entry.deleteMarkerVersionId || entry.DeleteMarkerVersionId) as string | undefined)
         : undefined;
       const isDeleteMarker = entry
-        ? (entry.deleteMarker ?? entry.DeleteMarker) === true ||
-          (entry.deleteMarker ?? entry.DeleteMarker) === 'true'
+        ? (entry.deleteMarker ?? entry.DeleteMarker) === true || (entry.deleteMarker ?? entry.DeleteMarker) === 'true'
         : false;
       const deleted = matches.get(id)?.deleted ?? false;
       if (isDeleteMarker) {
@@ -2181,7 +2084,7 @@ class S3mini {
       return {
         key: t.key,
         deleted,
-        ...((entryVersionId || t.versionId) ? { versionId: entryVersionId ?? t.versionId } : {}),
+        ...(entryVersionId || t.versionId ? { versionId: entryVersionId ?? t.versionId } : {}),
       };
     });
   }
@@ -2358,9 +2261,7 @@ class S3mini {
       const results = await Promise.all(batches.map(b => this._deleteObjectsProcess(b)));
       return results.flat();
     }
-    return options.versionInfo
-      ? this._deleteObjectsProcessInfo(normalized)
-      : this._deleteObjectsProcess(normalized);
+    return options.versionInfo ? this._deleteObjectsProcessInfo(normalized) : this._deleteObjectsProcess(normalized);
   }
 
   private async _sendRequest(
@@ -2431,7 +2332,7 @@ class S3mini {
       return '';
     }
     return Object.keys(queryParams)
-      .map((key): [string, string] => [encodeURIComponent(key), encodeURIComponent(String(queryParams[key]))])
+      .map((key): [string, string] => [uriEscape(key), uriEscape(String(queryParams[key]))])
       .sort(([a], [b]) => byCodePoint(a, b))
       .map(([k, v]) => `${k}=${v}`)
       .join('&');

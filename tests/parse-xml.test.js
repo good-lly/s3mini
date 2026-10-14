@@ -129,6 +129,14 @@ describe('parseXml — leaf & text handling', () => {
     expect(parseXml('1 &amp; 2 &lt;x&gt; &quot;q&quot; &apos;a&apos;')).toBe('1 & 2 <x> "q" \'a\'');
   });
 
+  it('decodes numeric character references (Go/MinIO emit &#39; for apostrophes, &#34; for quotes)', () => {
+    expect(parseXml('<Key>Rés (1)&#39;s &#34;q&#34; &#x41;&#x1F680;.txt</Key>')).toEqual({ Key: 'Rés (1)\'s "q" A🚀.txt' });
+  });
+
+  it('decodes each entity exactly once (no double decoding of &amp;#39; or &#38;amp;)', () => {
+    expect(parseXml('&amp;#39; &#38;amp;')).toBe('&#39; &amp;');
+  });
+
   it('trims surrounding whitespace from leaf text', () => {
     expect(parseXml('<a>  x  </a>')).toEqual({ a: 'x' });
   });
@@ -242,7 +250,7 @@ describe('parseXml — tag name edge cases', () => {
 });
 
 describe('parseXml — malformed input is lenient (never throws)', () => {
-  const malformed = ['<a>oops', '<a>x</b>', 'a < b', '<>', '</a>', '<a><b></a>'];
+  const malformed = ['<a>oops', '<a>x</b>', 'a < b', '<>', '</a>', '<a><b></a>', '&#x110000;'];
 
   it.each(malformed)('does not throw on %p', input => {
     expect(() => parseXml(input)).not.toThrow();

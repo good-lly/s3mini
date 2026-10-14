@@ -226,22 +226,6 @@ export interface NativeS3File {
   presign(opts?: { method?: string; expiresIn?: number; acl?: string; type?: string }): string;
 }
 
-export interface NativeS3ListObject {
-  key: string;
-  lastModified: Date | string;
-  size: number;
-  /** Bun spells it `eTag` and leaves the XML entities (`&#34;`) unresolved. */
-  eTag?: string;
-  storageClass?: string;
-}
-
-export interface NativeS3ListResult {
-  contents?: NativeS3ListObject[];
-  commonPrefixes?: { prefix: string }[];
-  isTruncated: boolean;
-  nextContinuationToken?: string;
-}
-
 export interface NativeS3Client {
   file(key: string): NativeS3File;
   write(
@@ -254,5 +238,4 @@ export interface NativeS3Client {
   size(key: string): Promise<number>;
   stat(key: string): Promise<NativeS3Stat>;
   presign(key: string, opts?: { method?: string; expiresIn?: number; acl?: string; type?: string }): string;
-  list(opts?: Record<string, unknown> | null, credentials?: Record<string, unknown>): Promise<NativeS3ListResult>;
 }

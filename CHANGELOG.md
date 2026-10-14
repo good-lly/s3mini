@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.0.3] - 2026-10-14
+
+### Changed
+
+- Bun native fast paths need Bun 1.4.0+ (older Bun mis-encodes `#` and `?` in keys). `listObjects` always uses signed requests.
+
+### Fixed
+
+- `SignatureDoesNotMatch` when a query value contained `! ' ( ) *`, e.g. `filename*=UTF-8''…` in `response-content-disposition`.
+- Numeric XML entities like `&#39;` are decoded, so MinIO list keys and ETags come back intact.
+
 ## [1.0.0] - 2026-07-28
 
 ### Added

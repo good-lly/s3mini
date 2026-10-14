@@ -55,4 +55,3 @@ export const ERROR_DATA_BUFFER_REQUIRED = `${ERROR_PREFIX}data must be a Buffer 
 export const ERROR_PREFIX_TYPE = `${ERROR_PREFIX}prefix must be a string`;
 export const ERROR_MAX_KEYS_TYPE = `${ERROR_PREFIX}maxKeys must be a positive integer`;
 export const ERROR_DELIMITER_REQUIRED = `${ERROR_PREFIX}delimiter must be a string`;
-export const ERROR_BUN_PAGINATION_STALLED = `${ERROR_PREFIX}Bun S3 list pagination stalled: truncated page did not advance the continuation token`;

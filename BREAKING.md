@@ -3,10 +3,15 @@
 This is a comprehensive list of the breaking changes introduced in the major version releases of s3mini library.
 
 ## Versions
+- [Version v1.0.3](#version-103)
 - [Verison v1.0.0](#version-100)
 - [Version v0.8.1](#version-081)
 - [Version v0.4.0](#version-040)
 - [Version v0.3.0](#version-030)
+
+## Version 1.0.3
+
+- Bun native fast paths need Bun 1.4.0+. On Bun 1.3.x every call goes through signed `fetch`, as on Node. `listObjects` does so on every Bun version.
 
 ## Version 1.0.0
 

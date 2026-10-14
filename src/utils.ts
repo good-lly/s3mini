@@ -6,12 +6,20 @@ import { ERROR_PREFIX } from './consts.js';
 /**
  * True when running on a Bun version that exposes the native S3 client.
  * `navigator.userAgent` is `Bun/<version>`, so the runtime is identified by `process.versions.bun`
- * and the client is capability-checked: older Bun releases have no `Bun.S3Client`.
+ * and the client is capability-checked: older Bun releases have no `Bun.S3Client`, and before 1.4.0
+ * it mis-encodes keys containing `#` or `?` (oven-sh/bun#19438), so reads of those keys miss.
  */
+type BunRuntime = {
+  S3Client?: unknown;
+  version: string;
+  semver: { satisfies(version: string, range: string): boolean };
+};
+const bun = (globalThis as { Bun?: BunRuntime }).Bun;
 export const isBun =
   typeof process !== 'undefined' &&
   !!process.versions?.bun &&
-  typeof (globalThis as { Bun?: { S3Client?: unknown } }).Bun?.S3Client === 'function';
+  typeof bun?.S3Client === 'function' &&
+  bun.semver.satisfies(bun.version, '>=1.4.0');
 
 /**
  * Compare two strings by code point, as required for AWS SigV4 canonical
@@ -166,8 +174,15 @@ export const escapeXml = (value: string): string => {
     .replaceAll("'", '&apos;');
 };
 
+// One pass over named and numeric (&#39; / &#x27;) references so nothing is decoded twice.
 const unescapeXml = (value: string): string =>
-  value.replaceAll(/&(quot|apos|lt|gt|amp);/g, m => entityMap[m as keyof typeof entityMap] ?? m);
+  value.replaceAll(/&(?:(quot|apos|lt|gt|amp)|#(x[0-9a-fA-F]+|\d+));/g, (m: string, named?: string, num?: string) => {
+    if (named) {
+      return entityMap[m as keyof typeof entityMap];
+    }
+    const cp = Number(num?.replace('x', '0x'));
+    return cp <= 0x10ffff ? String.fromCodePoint(cp) : m; // out-of-range reference is left as-is
+  });
 
 /**
  * Parse a very small subset of XML into a JS structure.

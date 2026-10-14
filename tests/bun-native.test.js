@@ -5,7 +5,8 @@ import * as dotenv from 'dotenv';
 dotenv.config();
 
 const raw = process.env.BUCKET_ENV_MINIO ? process.env.BUCKET_ENV_MINIO.split(',') : null;
-const nativeBun = typeof globalThis.Bun?.S3Client === 'function';
+// s3mini engages Bun.S3Client from Bun 1.4.0 only (see isBun in src/utils.ts).
+const nativeBun = typeof globalThis.Bun?.S3Client === 'function' && Bun.semver.satisfies(Bun.version, '>=1.4.0');
 
 /**
  * Proves the Bun.S3Client path is actually taken (it silently was not for months: the runtime
@@ -70,20 +71,6 @@ if (!nativeBun || !raw) {
       expect(res.headers.get('content-type')).toBe('text/plain');
     });
 
-    it('lists flat by default and groups only when a delimiter is given', async () => {
-      await native.putObject(nested, content, 'text/plain');
-
-      const flat = await native.listObjects('/', prefix);
-      expect(flat.map(o => o.Key).sort()).toEqual([key, nested].sort());
-      expect(flat).toEqual(await signed.listObjects('/', prefix));
-      // Bun spells the field eTag, so a mis-mapped listing silently returns empty ETags.
-      expect(flat.every(o => o.ETag.length > 0)).toBe(true);
-      expect(flat.every(o => typeof o.Size === 'number' && o.LastModified instanceof Date)).toBe(true);
-
-      const grouped = await native.listObjects('/', prefix, undefined, { delimiter: '/' });
-      expect(grouped.map(o => o.Key).sort()).toEqual([key, `${prefix}sub/`].sort());
-    });
-
     /**
      * A bucket that is not there is a 404 on every read, and every signed reader tolerates 404 and
      * answers null. Bun raises a typed error instead, so the mapping has to agree: matching only
@@ -99,7 +86,7 @@ if (!nativeBun || !raw) {
       expect(nativeAbsent._bun).toBeDefined();
       expect(signedAbsent._bun).toBeUndefined();
 
-      for (const read of [c => c.listObjects(), c => c.getObject(key), c => c.getObjectArrayBuffer(key)]) {
+      for (const read of [c => c.getObject(key), c => c.getObjectArrayBuffer(key)]) {
         expect(await read(nativeAbsent)).toBeNull();
         expect(await read(signedAbsent)).toBeNull();
       }
@@ -119,48 +106,6 @@ if (!nativeBun || !raw) {
       expect(await nested.getObject(key)).toBeNull();
       // The key really is in the parent bucket, which is what makes the null above meaningful.
       expect(await native.getObject(key)).toBe(content);
-    });
-
-    // A real multi-page listing needs >1000 objects (see the pagination e2e); these drive the
-    // native client with a stub so the cursor logic is checked without the upload.
-    const withStubbedList = pages => {
-      const client = new S3mini(cfg);
-      const calls = [];
-      client._bun = {
-        list: async opts => {
-          calls.push(opts);
-          return pages[Math.min(calls.length - 1, pages.length - 1)];
-        },
-      };
-      return { client, calls };
-    };
-    const entry = k => ({ key: k, size: 1, lastModified: new Date().toISOString(), eTag: '"e"' });
-
-    it('follows continuation tokens across pages', async () => {
-      const { client, calls } = withStubbedList([
-        { contents: [entry('a'), entry('b')], isTruncated: true, nextContinuationToken: 'T1' },
-        { contents: [entry('c')], isTruncated: false },
-      ]);
-
-      expect((await client.listObjects('/', 'p/')).map(o => o.Key)).toEqual(['a', 'b', 'c']);
-      expect(calls.map(c => c.continuationToken)).toEqual([undefined, 'T1']);
-    });
-
-    it('fails loudly instead of looping when the cursor stops advancing', async () => {
-      const noToken = withStubbedList([{ contents: [entry('a')], isTruncated: true }]);
-      await expect(noToken.client.listObjects('/', 'p/')).rejects.toThrow(/pagination stalled/);
-
-      const repeated = withStubbedList([
-        { contents: [entry('a')], isTruncated: true, nextContinuationToken: 'SAME' },
-        { contents: [entry('a')], isTruncated: true, nextContinuationToken: 'SAME' },
-      ]);
-      await expect(repeated.client.listObjects('/', 'p/')).rejects.toThrow(/pagination stalled/);
-      expect(repeated.calls.length).toBe(2);
-    });
-
-    it('returns a satisfied maxKeys request even if the page says truncated', async () => {
-      const { client } = withStubbedList([{ contents: [entry('a'), entry('b')], isTruncated: true }]);
-      expect((await client.listObjects('/', 'p/', 2)).map(o => o.Key)).toEqual(['a', 'b']);
     });
 
     it('deletes through the native client', async () => {

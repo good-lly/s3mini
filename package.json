@@ -1,6 +1,6 @@
 {
   "name": "s3mini",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "👶 Tiny & fast S3 client for node and edge computing platforms",
   "homepage": "https://code.nolog.cz/thinking.tools/s3mini",
   "bugs": {
