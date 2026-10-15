@@ -1358,29 +1358,20 @@ class S3mini {
     const results: IT.UploadPart[] = new Array(totalParts) as IT.UploadPart[];
     let nextIndex = 0;
 
+    const uploadPartAt = async (index: number): Promise<IT.UploadPart> => {
+      const start = index * partSize;
+      const end = Math.min(start + partSize, totalSize);
+      const part =
+        data instanceof Blob
+          ? await data.slice(start, end).arrayBuffer() // Must await - R2 needs actual bytes
+          : data.subarray(start, end);
+      return this._uploadPartWithRetry(key, uploadId, part, index + 1, ssecHeaders, additionalHeaders, maxRetries);
+    };
+
     const worker = async (): Promise<void> => {
-      while (true) {
+      while (nextIndex < totalParts) {
         const index = nextIndex++;
-        if (index >= totalParts) {
-          return;
-        }
-
-        const start = index * partSize;
-        const end = Math.min(start + partSize, totalSize);
-        const part =
-          data instanceof Blob
-            ? await data.slice(start, end).arrayBuffer() // Must await - R2 needs actual bytes
-            : data.subarray(start, end);
-
-        results[index] = await this._uploadPartWithRetry(
-          key,
-          uploadId,
-          part,
-          index + 1,
-          ssecHeaders,
-          additionalHeaders,
-          maxRetries,
-        );
+        results[index] = await uploadPartAt(index); // NOSONAR: sequential per worker; worker count caps concurrency
       }
     };
 
@@ -1447,7 +1438,8 @@ class S3mini {
     for await (const partData of generateParts(stream, this.minPartSize)) {
       const currentPartNumber = ++partNumber;
 
-      while (active.size >= concurrency) {
+      // A finished upload removes itself from `active`, so one race frees a slot (or rethrows a failure).
+      if (active.size >= concurrency) {
         await Promise.race(active);
       }
 
@@ -1465,6 +1457,9 @@ class S3mini {
       });
 
       active.add(p);
+      // Handle now: Node crashes on a rejection that waits for the next race or Promise.all.
+      // ponytail: failures surface only at that race or at stream end; cancel the source if the lag hurts.
+      p.catch(() => undefined);
     }
 
     await Promise.all(active);
@@ -1482,12 +1477,12 @@ class S3mini {
   ): Promise<IT.UploadPart> {
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        return await this.uploadPart(key, uploadId, data, partNumber, {}, ssecHeaders, additionalHeaders);
+        return await this.uploadPart(key, uploadId, data, partNumber, {}, ssecHeaders, additionalHeaders); // NOSONAR: sequential retries
       } catch (err) {
         if (attempt === maxRetries) {
           throw err;
         }
-        await new Promise(r => setTimeout(r, Math.min(1000 * 2 ** attempt, 10000)));
+        await new Promise(r => setTimeout(r, Math.min(1000 * 2 ** attempt, 10000))); // NOSONAR: backoff before the next retry
       }
     }
     throw new Error('Unreachable');

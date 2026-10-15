@@ -12,6 +12,7 @@ export default {
     '<rootDir>/tests/parse-xml.test.js',
     '<rootDir>/tests/versioning.test.js',
     '<rootDir>/tests/list-pagination.test.js',
+    '<rootDir>/tests/multipart-concurrency.test.js',
     '<rootDir>/tests/package-types.test.js',
   ],
   transform: {

@@ -8,9 +8,6 @@ on:
     types: [opened, synchronize, reopened]
   workflow_dispatch:
 
-permissions:
-  pull-requests: read
-
 jobs:
   sonarqube:
     name: SonarQube

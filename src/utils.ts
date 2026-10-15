@@ -304,7 +304,7 @@ export const runInBatches = async <T = unknown>(
   for (const task of tasks) {
     batch.push(task);
     if (batch.length === batchSize) {
-      await executeBatch(batch);
+      await executeBatch(batch); // NOSONAR: batches run sequentially by design
       batch = [];
     }
   }
